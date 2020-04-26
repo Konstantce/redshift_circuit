@@ -1,0 +1,21 @@
+[package]
+authors = ["Sean Bowe <sean@z.cash>", "Alex Vlasov <alex.m.vlasov@gmail.com>", "Konstantin Panarin <kp@matterlabs.dev>"]
+description = "circuit for Redshift recursion"
+license = "MIT/Apache-2.0"
+name = "redshift_circuit"
+version = "0.1.0"
+#edition = "2018"
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+ 
+[dependencies]
+bellman = {package = "bellman_ce", path = "C:/Users/Konstantce/Desktop/bellman/bellman"}
+
+byteorder = "1"
+blake2_rfc =  {package = "blake2-rfc", version = "0.2.18"}
+rand = "0.4"
+
+
+
