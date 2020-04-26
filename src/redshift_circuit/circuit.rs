@@ -123,7 +123,7 @@ where E: Engine, O: OracleGadget<E, Commitment = AllocatedNum<E>>, T: ChannelGad
 }
 
 
-struct RedShiftVerifierCircuit<E, O, T, I> 
+pub struct RedShiftVerifierCircuit<E, O, T, I> 
 where E: Engine, O: OracleGadget<E, Commitment = AllocatedNum<E>>, T: ChannelGadget<E>, I: Iterator<Item = Option<E::Fr>>
 {
     _engine_marker : std::marker::PhantomData<E>,
