@@ -37,17 +37,16 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
         commitments: &[I::Commitment],
         final_coefficients: &[AllocatedNum<E>],
 
-        natural_first_element_index: &[Boolean],
+        natural_index: Vec<Boolean>,
         fri_challenges: &[AllocatedNum<E>],
 
         oracle_params: &I::Params,
    
     ) -> Result<Boolean, SynthesisError>
     {
-        
         let collapsing_factor = fri_helper.get_collapsing_factor();
-        let mut natural_index = &natural_first_element_index[..];
-        let coset_idx = fri_helper.get_coset_idx_for_natural_index(natural_index);
+        let mut coset_idx = &fri_helper.get_coset_idx_for_natural_index(natural_index)[..];
+
         let coset_size = 1 << collapsing_factor;
 
         // check oracle proof for each element in the upper layer!
@@ -59,11 +58,12 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             let label = &labeled_query.label;
             let commitment_idx = upper_layer_commitments.iter().position(|x| x.label == *label).ok_or(SynthesisError::Unknown)?;
             let commitment = &upper_layer_commitments[commitment_idx].data;
+
             let oracle_check = oracle.validate(
                 cs.namespace(|| "Oracle proof"),
                 fri_helper.get_log_domain_size(),
                 &labeled_query.data.values, 
-                coset_idx,
+                &coset_idx[..],
                 commitment, 
                 &labeled_query.data.proof, 
             )?;
@@ -71,20 +71,20 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &oracle_check)?;
         }
 
-        // apply combiner function in order to conduct Fri round consistecy check
-        // with respect to the topmost layer
+        // apply combiner function in order to conduct Fri round consistecy check with respect to the topmost layer
         // let n be the size of coset
         // let the values contained inside queries to be (a_1, a_2, ..., a_n), (b_1, b_2, ..., b_n) , ..., (c_1, ..., c_n)
         // Coset combining function F constructs new vector of length n: (d_1, ..., d_n) via the following_rule : 
         // d_i = F(a_i, b_i, ..., c_i, x_i), i in (0..n)
         // here additiona argument x_i is the evaluation point and is defined by the following rule:
-        // if the coset idx has bit representation xxxxxxxx, then x_i = w^(bitreverse(yyyy)|xxxxxxx)
+        // if the coset idx has bit representation xxxxxxxx, then x_i = w^(bitreverse(xxxxxxx|yyyy) =
+        // the last expression is w^(bitreverse(yyyy) * k + bitreverse(xxxxxx))
         // here i = |yyyy| (bit decomposition)
-        // From this we see that the only common constrained part for all x_i is coset_omega = w^(xxxxxx)
+        // From this we see that the only common constrained part for all x_i is coset_omega = w^(bitreverse(xxxxxx))
         // and to get corresponding x_i we need to multiply coset_omega by constant c_i = w^(bitreverse(yyyy)|000000)
         // if g = w^(100000) then c_i = w^(bitreverse(yyyy) * 1000000) = g^(bitreverse(yyyy))
         // constants c_i are easily deduced from domain parameters
-        // construction of x_i is held by fri_utils
+        // construction of x_i is held by fri_utils 
 
         let mut values = Vec::with_capacity(coset_size);
         let evaluation_points = fri_helper.get_combiner_eval_points(
@@ -118,12 +118,9 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
         {
             // adapt fri_helper for smaller domain
             fri_helper.next_domain(cs.namespace(|| "shrink domain to next layer"));
-
-            // new natural_elem_index = (old_natural_element_index << collapsing_factor) % domain_size
-            natural_index = &natural_index[collapsing_factor..fri_helper.get_log_domain_size()];
-            let coset_idx = fri_helper.get_coset_idx_for_natural_index(natural_index);
-            let offset = fri_helper.get_coset_offset_for_natural_index(natural_index);
-
+            let (new_coset_idx, offset) = fri_helper.get_next_layer_coset_idx_extended(coset_idx);
+            coset_idx = new_coset_idx;
+            
             // oracle proof for current layer!
             let oracle_check = oracle.validate(
                 cs.namespace(|| "Oracle proof"),
@@ -141,7 +138,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             let cur_layer_element = fri_helper.choose_element_in_coset(
                 cs.namespace(|| "choose element from coset by index"),
                 &query.values[..],
-                offset,
+                offset.into_iter(),
             )?; 
             let rcc_flag = AllocatedNum::equals(
                 cs.namespace(|| "FRI round consistency check"), 
@@ -171,13 +168,17 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
         else {
 
             fri_helper.next_domain(cs.namespace(|| "shrink domain to final layer"));
-            natural_index = &natural_index[collapsing_factor..fri_helper.get_log_domain_size()];
+            let (coset_idx, offset) = fri_helper.get_next_layer_coset_idx_extended(coset_idx);
+            let natural_index = fri_helper.get_natural_idx_for_coset_idx_offset(&coset_idx[..], &offset[..]);
+
+
             let omega = fri_helper.get_bottom_layer_omega(cs.namespace(|| "final layer generator"))?;
-            let ev_p = AllocatedNum::pow(
+            let mut ev_p = AllocatedNum::pow(
                 cs.namespace(|| "poly eval: evaluation point"), 
                 omega, 
-                natural_index.iter(),
+                natural_index,
             )?;
+            ev_p.scale(fri_helper.get_coset_factor());
 
             let mut t = ev_p.clone();
             let mut running_sum : Num<E> = final_coefficients[0].clone().into();
@@ -216,8 +217,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 
         query_rounds_data: &Vec<FriSingleQueryRoundData<E, I>>,
     ) -> Result<Boolean, SynthesisError> 
-    {
-        
+    {     
         // construct global parameters
         let mut final_result = Boolean::Constant(true);
         let mut temp_arr = Vec::with_capacity(self.collapsing_factor * fri_challenges.len());
@@ -259,7 +259,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
                 commitments,
                 final_coefficients,
 
-                &natural_first_element_index[..],
+                natural_first_element_index,
                 &unpacked_fri_challenges[..],
                 oracle_params,
             )?;
