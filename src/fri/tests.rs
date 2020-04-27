@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
     use bellman::pairing::bn256::{Bn256, Fr};
-    use bellman::pairing::ff::{PrimeField, PrimeFieldRepr};
+    use bellman::pairing::ff::{Field, PrimeField, PrimeFieldRepr};
     use bellman::{Engine, Circuit, ConstraintSystem, SynthesisError};
     use bellman::redshift::IOP::hashes::rescue::{Rescue, RescueParams};
     use bellman::redshift::IOP::hashes::rescue::bn256_rescue_params::BN256Rescue;
@@ -21,6 +21,22 @@ mod test {
     use oracles::OracleGadget;
     use fri::*;
     use oracles::rescue_merklee_proof::*;
+
+
+    struct TrivialCombiner {}
+
+    impl<E: Engine> UpperLayerCombiner<E> for TrivialCombiner {
+        fn combine<CS: ConstraintSystem<E>>(
+            &self,
+            cs: CS, 
+            domain_values: Vec<Labeled<&AllocatedNum<E>>>,
+            evaluation_point : &Num<E>
+        ) -> Result<AllocatedNum<E>, SynthesisError>
+        {
+            let res = domain_values.into_iter().find(|elem| elem.label == "starting oracle").map(|elem| elem.data.clone()).ok_or(SynthesisError::Unknown);
+            res
+        }
+    }
 
 
     struct FriSetup<E: Engine, O: OracleGadget<E>> 
@@ -134,19 +150,21 @@ mod test {
                 rescue_params: &self.rescue_params,
                 _marker: std::marker::PhantomData::<E::Fr>,
             };
+            let mut iter = self.iter;
+            let fri_params = self.fri_params;
 
             let fri_setup = FriSetup::<E, RescueTreeGadget<E, RP, SBOX>>::from_stream(
                 cs.namespace(|| "fri setup"),
-                &mut self.iter,
-                &self.fri_params,
+                &mut iter,
+                &fri_params,
             )?;
 
-            let fri_query_rounds = (0..self.fri_params.R).map(|_| {
+            let fri_query_rounds = (0..fri_params.R).map(|_| {
 
                 let single_query_data = FriSingleQueryRoundData::from_stream(
                     cs.namespace(|| "fri round"),
-                    &mut self.iter,
-                    self.fri_params.clone(),
+                    &mut iter,
+                    fri_params.clone(),
                 );
                 single_query_data
             }).collect::<Result<Vec<_>, _>>()?;
@@ -176,15 +194,39 @@ mod test {
     #[test]
     fn test_fri_verifier() 
     {
-        use crate::pairing::bn256::Fr as Fr;
+        use bellman::redshift::IOP::channel::rescue_channel::*;
+        use bellman::multicore::*;
+        use bellman::redshift::IOP::channel::*;
+        use bellman::redshift::IOP::oracle::coset_combining_rescue_tree::*;
+        use bellman::redshift::polynomials::*;
+        use bellman::redshift::fft::cooley_tukey_ntt::*;
+        use bellman::redshift::IOP::oracle::*;
+        use bellman::redshift::IOP::FRI::coset_combining_fri::*;
+        use bellman::redshift::IOP::FRI::coset_combining_fri::precomputation::*;
+        use bellman::redshift::redshift::serialization::ToStream;
+
+        use hashes::bn256_rescue_sbox::BN256RescueSbox;
+        use tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
+
+        use rand::*;
+        
+        type E = bellman::pairing::bn256::Bn256;
+        type O<'a> = FriSpecificRescueTree<'a, Fr, BN256Rescue>;
+        type T<'a> = RescueChannel<'a, Fr, BN256Rescue>;
 
         let bn256_rescue_params = BN256Rescue::default();
 
         const SIZE: usize = 1024;
         let worker = Worker::new_with_cpus(1);
-        let mut channel = Blake2sChannel::new(&());
 
-        let params = FriParams {
+        let channel_params = RescueChannelParams {
+            rescue_params: &bn256_rescue_params,
+            _marker: std::marker::PhantomData::<Fr>,
+        };
+
+        let mut channel = RescueChannel::new(&channel_params);
+
+        let fri_params = FriParams {
             collapsing_factor: 2,
             R: 4,
             initial_degree_plus_one: std::cell::Cell::new(SIZE),
@@ -192,8 +234,10 @@ mod test {
             final_degree_plus_one: 4,
         };
 
-        let oracle_params = FriSpecificBlake2sTreeParams {
-            values_per_leaf: 1 << params.collapsing_factor
+        let oracle_params = RescueTreeParams {
+            values_per_leaf: 1 << fri_params.collapsing_factor,
+            rescue_params: &bn256_rescue_params,
+            _marker: std::marker::PhantomData::<Fr>,
         };
 
         let rng = &mut XorShiftRng::from_seed([0x3dbe6259, 0x8d313d76, 0x3237db17, 0xe5bc0654]);
@@ -207,35 +251,37 @@ mod test {
 
         // construct upper layer oracle from eval_result
 
-        let upper_layer_oracle = FriSpecificBlake2sTree::create(eval_result.as_ref(), &oracle_params);
+        let upper_layer_oracle = FriSpecificRescueTree::create(eval_result.as_ref(), &oracle_params);
         let batched_oracle = BatchedOracle::create(vec![("starting oracle", &upper_layer_oracle)]);
         let upper_layer_commitments = batched_oracle.get_commitment();
 
         let fri_precomp = <OmegasInvBitreversed::<Fr> as FriPrecomputations<Fr>>::new_for_domain_size(eval_result.size());
 
-        let fri_proto = FriIop::<Fr, FriSpecificBlake2sTree<Fr>, Blake2sChannel<Fr>>::proof_from_lde(
+        let fri_proto = FriIop::<Fr, O, T>::proof_from_lde(
             eval_result.clone(), 
             &fri_precomp, 
             &worker, 
             &mut channel,
-            &params,
+            &fri_params,
             &oracle_params,
         ).expect("FRI must succeed");
 
-        let proof = FriIop::<Fr, FriSpecificBlake2sTree<Fr>, Blake2sChannel<Fr>>::prototype_into_proof(
+        let natural_indexes = vec![6, 4, 127, 434];
+
+        let proof = FriIop::<Fr, O, T>::prototype_into_proof(
             fri_proto,
             &batched_oracle,
             vec![eval_result.as_ref()],
-            vec![6, 4, 127, 434],
-            &params,
+            natural_indexes.clone(),
+            &fri_params,
             &oracle_params,
         ).expect("Fri Proof must be constrcuted");
 
         channel.reset();
-        let fri_challenges = FriIop::<Fr, FriSpecificBlake2sTree<Fr>, Blake2sChannel<Fr>>::get_fri_challenges(
+        let fri_challenges = FriIop::<Fr, O, T>::get_fri_challenges(
             &proof,
             &mut channel,
-            &params,
+            &fri_params,
         );
 
         // upper layer combiner is trivial in our case
@@ -244,26 +290,59 @@ mod test {
             res
         };
 
-        let result = FriIop::<Fr, FriSpecificBlake2sTree<Fr>, Blake2sChannel<Fr>>::verify_proof_queries(
+        let result = FriIop::<Fr, O, T>::verify_proof_queries(
             &proof,
-            upper_layer_commitments,
-            vec![6, 4, 127, 434],
+            upper_layer_commitments.clone(),
+            natural_indexes.clone(),
             &fri_challenges,
-            &params,
+            &fri_params,
             &oracle_params,
             upper_layer_combiner,
         ).expect("Verification must be successful");
 
-        assert_eq!(result, true);    
+        assert_eq!(result, true); 
+
+        let mut container : Vec<Fr> = Vec::new();
+        upper_layer_commitments[0].1.to_stream(&mut container, ());
+        
+        let intermidiate_commitments = &proof.commitments;
+        for c in intermidiate_commitments {
+            c.to_stream(&mut container, ());
+        }
+
+        proof.final_coefficients.to_stream(&mut container, fri_params.final_degree_plus_one);
+        let num_challenges = fri_challenges.len();
+        fri_challenges.to_stream(&mut container, num_challenges);
+
+        let temp : Vec<Fr> = natural_indexes.into_iter().map(|idx| {
+            let mut repr = <Fr as PrimeField>::Repr::default();
+            repr.as_mut()[0] = idx as u64;
+            let elem = Fr::from_repr(repr).expect("should convert");
+            elem
+        }).collect();
+        temp.to_stream(&mut container, fri_params.R);
+
+        let test_circuit = TestCircuit {
+            iter: container.into_iter().map(|x| Some(x)),
+            sbox: BN256RescueSbox,
+            rescue_params: bn256_rescue_params,
+            fri_params: fri_params.clone(),
+            combiner: TrivialCombiner{},
+
+            _engine_marker : std::marker::PhantomData::<E>,
+        };
+
         let mut cs = TestConstraintSystem::<Bn256>::new();
         test_circuit.synthesize(&mut cs).expect("should synthesize");
 
         assert!(cs.is_satisfied());
 
-        cs.modify_input(1, "allocate root/num", Fr::one());
+        cs.modify_input(1, "natural_index/num", Fr::one());
         assert!(!cs.is_satisfied());
 
-        println!("Rescue tree for 4096 elements with 4 elements per leaf requires {} constraints", cs.num_constraints());
+        println!("Fri verifier cicrcuit for polynomials of degree {}, lde-factor {}, collapsing_factor {} and 
+            {} query rounds contains {} constraints", fri_params.initial_degree_plus_one.get(), fri_params.lde_factor, 
+            fri_params.collapsing_factor, fri_params.R, cs.num_constraints());
     }
 }
 

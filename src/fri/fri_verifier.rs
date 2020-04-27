@@ -26,7 +26,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 {
 
     fn verify_single_proof_round<CS: ConstraintSystem<E>>(
-        &mut self,
+        &self,
         mut cs: CS,
 
         upper_layer_queries: &[Labeled<Query<E, I>>],
@@ -204,7 +204,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 
 
     pub fn verify_proof<CS: ConstraintSystem<E>>(
-        &mut self,
+        &self,
         mut cs: CS,
         oracle_params: &I::Params,
         // data that is shared among all Fri query rounds
