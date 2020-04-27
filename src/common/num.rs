@@ -103,6 +103,16 @@ impl<E: Engine> AllocatedNum<E> {
         })
     }
 
+    pub fn alloc_input2<CS: ConstraintSystem<E>>(mut cs: CS, value: Option<E::Fr>) -> Result<Self, SynthesisError> {
+
+        let variable = cs.alloc_input(|| "num", || value.ok_or(SynthesisError::AssignmentMissing))?;
+
+        Ok(AllocatedNum {
+            value,
+            variable
+        })
+    }
+
     pub fn from_var(variable: Variable, value: Option<E::Fr>) -> Self {
         AllocatedNum {
             value,

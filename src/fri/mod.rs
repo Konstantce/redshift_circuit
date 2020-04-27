@@ -1,5 +1,6 @@
 pub mod fri_utils;
 pub mod fri_verifier;
+pub mod tests;
 
 use common::*;
 use common::num::*;
@@ -47,7 +48,6 @@ pub struct FriVerifierGadget<E: Engine, I: OracleGadget<E>, C: UpperLayerCombine
 }
 
 
-
 impl<E: Engine, O: OracleGadget<E>> FromStream<E, FriParams> for FriSingleQueryRoundData<E, O> {
 
     fn from_stream<CS: ConstraintSystem<E>, I: Iterator<Item = Option<E::Fr>>>(
@@ -58,7 +58,7 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, FriParams> for FriSingleQueryR
     {
         let coset_size = 1 << fri_params.collapsing_factor;
         let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
-        let top_leve_height = log2_floor(top_level_oracle_size);
+        let top_level_height = log2_floor(top_level_oracle_size);
         
         let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
         // we do not count the very first and the last iterations
@@ -72,12 +72,12 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, FriParams> for FriSingleQueryR
         for label in labels.iter() {
             let elem = Labeled::new(
                 label, 
-                Query::from_stream(cs.namespace(|| "upper_layer_query"), iter, (coset_size, top_leve_height))?,
+                Query::from_stream(cs.namespace(|| "upper_layer_query"), iter, (coset_size, top_level_height))?,
             );
             upper_layer_queries.push(elem);
         }
 
-        let mut cur_height = top_leve_height - fri_params.collapsing_factor as usize;
+        let mut cur_height = top_level_height - fri_params.collapsing_factor as usize;
         let mut queries = Vec::with_capacity(num_of_iters);
 
         for _ in 0..num_of_iters {
