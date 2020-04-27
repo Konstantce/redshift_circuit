@@ -420,7 +420,7 @@ mod test {
     use super::{UInt32};
     use bellman::pairing::bls12_381::{Bls12};
     use bellman::pairing::ff::{Field};
-    use tester::*;
+    use crate::tester::naming_dependent_cs::NamingDependentConstraintSystem as TestConstraintSystem;
     use bellman::{ConstraintSystem};
     use common::multieq::MultiEq;
 

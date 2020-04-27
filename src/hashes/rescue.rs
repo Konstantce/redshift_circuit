@@ -120,9 +120,9 @@ fn rescue_duplex<E: Engine, CS: ConstraintSystem<E>, Params: RescueParams<E::Fr>
 
     rescue_f::<E, CS, Params, SBOX>(&mut cs, state, params)?;
 
-    let mut output = vec![];
+    let mut output = Vec::with_capacity(OUTPUT_RATE);
     for i in 0..OUTPUT_RATE {
-        output[i] = Some(state[i].clone());
+        output.push(Some(state[i].clone()));
     }
 
     Ok(output)
@@ -229,7 +229,7 @@ mod test {
     use bellman::pairing::bn256::Bn256;
 
     use super::super::bn256_rescue_sbox::BN256RescueSbox;
-    use crate::tester::TestConstraintSystem;
+    use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
 
     #[test]
     fn test_rescue_gadget() {
@@ -300,6 +300,9 @@ mod test {
         test_circuit.synthesize(&mut cs).expect("should synthesize");
 
         assert!(cs.is_satisfied());
+
+        cs.modify_input(1, "rescue output/num", Fr::one());
+        assert!(!cs.is_satisfied());
 
         println!("Rescue 2->1 with 22 rounds requires {} constraints", cs.num_constraints());
     }    

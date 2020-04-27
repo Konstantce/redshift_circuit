@@ -834,7 +834,7 @@ mod test {
     use bellman::{ConstraintSystem};
     use bellman::pairing::bls12_381::{Bls12, Fr};
     use bellman::pairing::ff::{Field, PrimeField};
-    use crate::tester::*;
+    use crate::tester::naming_dependent_cs::NamingDependentConstraintSystem as TestConstraintSystem;
     use super::{
         AllocatedBit,
         Boolean,

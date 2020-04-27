@@ -87,15 +87,17 @@ impl<'a, E: Engine, RP: RescueParams<E::Fr>, SBOX: RescueSbox<E>> RescueTreeGadg
         path: &[Boolean], 
         witness: &[AllocatedNum<E>]
     ) -> Result<Boolean, SynthesisError> {
+
         if height != witness.len() {
+            println!("Height of the tree differs from witness length");
             return Err(SynthesisError::Unsatisfiable);
         }
 
         let mut cur = leaf_hash;
 
         // Ascend the merkle tree authentication path
-        for (i, direction_bit) in path.into_iter()
-                                        .enumerate() {
+        for (i, direction_bit) in path.into_iter().take(height).enumerate() 
+        {
             let cs = &mut cs.namespace(|| format!("merkle tree hash {}", i));
 
             // "direction_bit" determines if the current subtree
@@ -200,7 +202,7 @@ mod test {
     
     use common::num::AllocatedNum;
     use common::boolean::AllocatedBit;    
-    use tester::TestConstraintSystem;
+    use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
 
     use hashes::rescue::*;
     use hashes::bn256_rescue_sbox::BN256RescueSbox;
@@ -240,7 +242,7 @@ mod test {
                 cs: &mut CS,
             ) -> Result<(), SynthesisError> {
 
-                let root = AllocatedNum::alloc(cs.namespace(|| "allocate root"), || Ok(self.root_hash))?;
+                let root = AllocatedNum::alloc_input(cs.namespace(|| "allocate root"), || Ok(self.root_hash))?;
                 let index = self.index;
 
                 let elems = self.leaf_elems.into_iter().map(|e| {
@@ -307,14 +309,14 @@ mod test {
 
             let tree = FriSpecificRescueTree::create(&values[..], &oracle_params);
 
-            assert_eq!(tree.size(), 1024);
+            assert_eq!(tree.size(), 4096);
 
             let root = tree.get_commitment();
 
             // let out index be 42
 
             let leaf_elements = Vec::from_iter(values[42*4..43*4].iter().cloned());
-            let query : CosetCombinedQuery<Fr> = tree.produce_query(42*4..43*4, &values[42*4..43*4], &oracle_params);
+            let query : CosetCombinedQuery<Fr> = tree.produce_query(42*4..43*4, &values[..], &oracle_params);
             let proof = query.raw_merkle_proof();
 
             (42, root, leaf_elements, proof)
@@ -336,6 +338,9 @@ mod test {
         test_circuit.synthesize(&mut cs).expect("should synthesize");
 
         assert!(cs.is_satisfied());
+
+        cs.modify_input(1, "allocate root/num", Fr::one());
+        assert!(!cs.is_satisfied());
 
         println!("Rescue tree for 4096 elements with 4 elements per leaf requires {} constraints", cs.num_constraints());
     }

@@ -15,7 +15,7 @@ mod test {
     use common::log2_floor;
     use oracles::rescue_merklee_proof::*;
     use redshift_circuit::circuit::*;
-    use tester::TestConstraintSystem;
+    use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
     use bellman::Circuit;
     use hashes::bn256_rescue_sbox::BN256RescueSbox;
     use channel::rescue_channel::RescueChannelGadget;
