@@ -130,10 +130,13 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, FriParams> for BatchedFriProof
         let final_coefficients = 
             Vec::from_stream(cs.namespace(|| "final coefficients"), iter, fri_params.final_degree_plus_one)?;
 
+        let labels = ["q_l", "q_r", "q_o", "q_m", "q_c", "q_add_sel", "s_id", "sigma_1", "sigma_2", "sigma_3",
+            "a", "b", "c", "z_1", "z_2", "t_low", "t_mid", "t_high"];
+
         let mut fri_round_queries = Vec::with_capacity(fri_params.R);
         for _ in 0..fri_params.R {
             let fri_round = FriSingleQueryRoundData::from_stream(
-                cs.namespace(|| "FRI round query"), iter, fri_params.clone())?;
+                cs.namespace(|| "FRI round query"), iter, (fri_params.clone(), &labels))?;
             fri_round_queries.push(fri_round);
         }
         

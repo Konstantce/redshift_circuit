@@ -266,7 +266,6 @@ pub fn upper_layer_combiner_impl<E: Engine, I: OracleGadget<E>, CS: ConstraintSy
 }
 
 
-
 pub struct ReshiftCombiner<E: Engine, I: OracleGadget<E>> {
     pub setup_precomp: RedshiftSetupPrecomputation<E, I>,
     pub opening_values: LabeledVec<AllocatedNum<E>>,

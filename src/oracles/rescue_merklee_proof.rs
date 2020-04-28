@@ -89,7 +89,7 @@ impl<'a, E: Engine, RP: RescueParams<E::Fr>, SBOX: RescueSbox<E>> RescueTreeGadg
     ) -> Result<Boolean, SynthesisError> {
 
         if height != witness.len() {
-            println!("Height of the tree differs from witness length");
+            println!("Height of the tree: {} differs from witness length: {}", height, witness.len());
             return Err(SynthesisError::Unsatisfiable);
         }
 

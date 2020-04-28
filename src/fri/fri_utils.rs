@@ -44,9 +44,11 @@ pub struct FriUtilsGadget<E: Engine> {
 
     // may be it is a dirty Hack(
     // contains inversed generators of the layers
+    // simplu to reuse them on each iteration of FRI queries
     constrainted_omega_inv_arr: Vec<AllocatedNum<E>>,
     constrainted_top_level_omega: Option<AllocatedNum<E>>,
     constrainted_bottom_level_omega: Option<AllocatedNum<E>>,
+    constrainted_coset_factor: Option<AllocatedNum<E>>,
 
     _marker: std::marker::PhantomData<E>,
 }
@@ -66,8 +68,21 @@ impl<E: Engine> FriUtilsGadget<E> {
         self.collapsing_factor
     }
 
-    pub fn get_coset_factor(&self) -> E::Fr {
-        self.coset_factor.clone()
+    pub fn get_cur_height(&self) -> usize {
+        self.log_domain_size - self.collapsing_factor
+    }
+
+    pub fn get_coset_factor<CS>(&mut self, mut cs: CS) -> Result<&AllocatedNum<E>, SynthesisError> 
+    where CS: ConstraintSystem<E> 
+    {
+        let coset_factor = self.coset_factor.clone();
+        let res = self.constrainted_coset_factor.get_or_insert_with(|| {
+            AllocatedNum::alloc_const(
+                cs.namespace(|| "constrainted coset factor"), 
+                coset_factor,
+            ).expect("should create")
+        });
+        Ok(res)
     }
 
     pub fn get_topmost_layer_omega<CS>(&mut self, mut cs: CS) -> Result<&AllocatedNum<E>, SynthesisError>
@@ -77,11 +92,11 @@ impl<E: Engine> FriUtilsGadget<E> {
             return Err(SynthesisError::Unknown);
         }
 
-        let val = self.omega.clone();
+        let omega = self.omega.clone();
         let res = self.constrainted_top_level_omega.get_or_insert_with(|| {
-            AllocatedNum::alloc(
+            AllocatedNum::alloc_const(
                 cs.namespace(|| "constrainted top-level omega"), 
-                || {Ok(val)}
+                omega,
             ).expect("should create")
         });
 
@@ -92,14 +107,15 @@ impl<E: Engine> FriUtilsGadget<E> {
     where CS: ConstraintSystem<E> 
     {
         if self.layer != self.num_iters - 1 {
+            print!("layer {}. num_of_iters: {}", self.layer, self.num_iters);
             return Err(SynthesisError::Unknown);
         }
 
-        let val = self.omega.clone();
+        let omega = self.omega.clone();
         let res = self.constrainted_bottom_level_omega.get_or_insert_with(|| {
-            AllocatedNum::alloc(
+            AllocatedNum::alloc_const(
                 cs.namespace(|| "constrainted top-level omega"), 
-                || {Ok(val)}
+                omega,
             ).expect("should create")
         });
 
@@ -125,9 +141,9 @@ impl<E: Engine> FriUtilsGadget<E> {
         let two_inv = two.inverse().expect("should exist");
 
         let mut constrainted_omega_inv_arr = Vec::with_capacity(num_iters);
-        let constrainted_omega_inv = AllocatedNum::alloc(
+        let constrainted_omega_inv = AllocatedNum::alloc_const(
             cs.namespace(|| "generator (inv) of domain constrainted"), 
-            || {Ok(omega_inv.clone())}
+            omega_inv.clone(),
         ).expect("should create");
         constrainted_omega_inv_arr.push(constrainted_omega_inv);
 
@@ -157,6 +173,7 @@ impl<E: Engine> FriUtilsGadget<E> {
             constrainted_omega_inv_arr,
             constrainted_top_level_omega: None,
             constrainted_bottom_level_omega: None,
+            constrainted_coset_factor: None,
 
             _marker: std::marker::PhantomData::<E>,
         }
@@ -166,11 +183,14 @@ impl<E: Engine> FriUtilsGadget<E> {
     pub fn next_domain<CS: ConstraintSystem<E>>(&mut self, mut cs: CS) {
 
         self.domain_size >>= self.collapsing_factor;
-        self.log_domain_size -= 1;
-        self.omega.square();
-        self.omega_inv.square();
+        self.log_domain_size -= self.collapsing_factor;
+        for _ in 0..self.collapsing_factor {
+            self.omega.square();
+            self.omega_inv.square();
+        }
         self.layer += 1;
-        assert!(self.layer < self.num_iters);
+        // TODO: investigate the connection (num of iters) 
+        assert!(self.layer <= self.num_iters);
         assert!(self.log_domain_size > 0);
 
         if self.first_pass {
@@ -231,7 +251,8 @@ impl<E: Engine> FriUtilsGadget<E> {
     ) -> (&'a [Boolean], &'a [Boolean])
     {
         let (new_offset, new_coset_idx) = coset_idx.split_at(self.collapsing_factor);
-        (new_offset, new_coset_idx)
+        println!("coset idx len: {}, offset_len: {}", new_coset_idx.len(), new_offset.len());
+        (new_coset_idx, new_offset)
     }
 
     pub fn get_natural_idx_for_coset_idx_offset<'a>(
@@ -249,52 +270,25 @@ impl<E: Engine> FriUtilsGadget<E> {
     where CS: ConstraintSystem<E>, I : Iterator<Item = &'a Boolean>,
     {
         assert_eq!(coset.len(), self.wrapping_factor);
-        let mut array : Vec<AllocatedNum<E>> = Vec::new();
-        // first, fill in array!
+        println!("coset len: {}", coset.len());
 
-        let mut take_left_part = true;
-        let mut input_len = self.wrapping_factor;
+        let mut array : Vec<AllocatedNum<E>> = Vec::with_capacity(coset.len()/2);
+        let mut input = &coset[..];
 
         for (i, bit) in index.enumerate() {
 
-            if i == 0 {
-                // on first iteration we simply fill in array
-                array = coset.chunks(2).map(|chunk| {
-                    AllocatedNum::conditionally_select(
-                        cs.namespace(|| "chooser"), 
-                        &chunk[1], 
-                        &chunk[0],
-                        bit,
-                    )
-                }).collect::<Result<_, _>>()?;
-            }
-            else {
-                
-                let (left_part, right_part) = array.split_at_mut(self.wrapping_factor);
-                let (input, output) = match take_left_part {
-                    true => (&left_part[0..input_len], &mut right_part[0..input_len/2]),
-                    false => (&right_part[0..input_len], &mut left_part[0..input_len/2]), 
-                };
-            
-                for (pair, o) in input.chunks(2).zip(output.iter_mut()) {
-                    *o = AllocatedNum::conditionally_select(
-                        cs.namespace(|| "chooser"), 
-                        &pair[1], 
-                        &pair[0],
-                        bit,
-                    )?;
-                }
-
-                take_left_part = !take_left_part;
-                input_len >>= 1;
-            }         
+            array = input.chunks(2).map(|chunk| {
+                AllocatedNum::conditionally_select(
+                    cs.namespace(|| "chooser"), 
+                    &chunk[1], 
+                    &chunk[0],
+                    bit,
+                )
+            }).collect::<Result<_, _>>()?;
+            input = &array[..];
         }
-        
-        let res = match take_left_part {
-            true => array.into_iter().nth(0),
-            false => array.into_iter().nth(self.wrapping_factor),
-        };
-
+ 
+        let res = array.into_iter().nth(0);
         res.ok_or(SynthesisError::Unknown)
     }
 

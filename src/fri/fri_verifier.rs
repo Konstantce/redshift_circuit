@@ -53,6 +53,8 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
         let oracle = I::new(oracle_params);
         let mut final_result = Boolean::Constant(true);
 
+        println!("fri verifier start");
+
         for labeled_query in upper_layer_queries.iter() {
 
             let label = &labeled_query.label;
@@ -61,7 +63,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 
             let oracle_check = oracle.validate(
                 cs.namespace(|| "Oracle proof"),
-                fri_helper.get_log_domain_size(),
+                fri_helper.get_cur_height(),
                 &labeled_query.data.values, 
                 &coset_idx[..],
                 commitment, 
@@ -70,6 +72,8 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &oracle_check)?;
         }
+
+        println!("after first oracle");
 
         // apply combiner function in order to conduct Fri round consistecy check with respect to the topmost layer
         // let n be the size of coset
@@ -113,18 +117,26 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             &fri_challenges[0..coset_size], 
         )?;
 
+        println!("queries len: {}", queries.len());
+        println!("commitments len: {}", commitments.len());
+        println!("fri challenges -len: {}", fri_challenges.chunks(collapsing_factor).len());
+
         for ((query, commitment), challenges) 
-            in queries.into_iter().zip(commitments.iter()).zip(fri_challenges.chunks(coset_size).skip(1)) 
+            in queries.into_iter().zip(commitments.iter()).zip(fri_challenges.chunks(collapsing_factor).skip(1)) 
         {
+            println!("next iter");
+            
             // adapt fri_helper for smaller domain
             fri_helper.next_domain(cs.namespace(|| "shrink domain to next layer"));
             let (new_coset_idx, offset) = fri_helper.get_next_layer_coset_idx_extended(coset_idx);
             coset_idx = new_coset_idx;
+
+            println!("HERE");
             
             // oracle proof for current layer!
             let oracle_check = oracle.validate(
                 cs.namespace(|| "Oracle proof"),
-                fri_helper.get_log_domain_size(),
+                fri_helper.get_cur_height(),
                 &query.values, 
                 coset_idx,
                 commitment, 
@@ -133,8 +145,11 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &oracle_check)?;
 
+            println!("THERE");
+
             // round consistency check (rcc) : previous layer element interpolant has already been stored
             // compare it with current layer element (which is chosen from query values by offset)
+            println!("offset len: {}", offset.len());
             let cur_layer_element = fri_helper.choose_element_in_coset(
                 cs.namespace(|| "choose element from coset by index"),
                 &query.values[..],
@@ -147,6 +162,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             )?;
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &rcc_flag)?;
 
+            println!("interpolant before");
             //recompute interpolant (using current layer for now) 
             //and store it for use on the next iteration (or for final check)
             previous_layer_element = fri_helper.coset_interpolation_value(
@@ -155,7 +171,10 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
                 coset_idx.iter(),
                 &fri_challenges, 
             )?;
+            println!("interpolant after");
         }
+
+        println!("heree");
 
         // finally we compare the last interpolant with the value f(\omega), 
         // where f is built from coefficients
@@ -173,12 +192,14 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
 
 
             let omega = fri_helper.get_bottom_layer_omega(cs.namespace(|| "final layer generator"))?;
+            println!("got bottom layer");
             let mut ev_p = AllocatedNum::pow(
                 cs.namespace(|| "poly eval: evaluation point"), 
                 omega, 
                 natural_index,
             )?;
-            ev_p.scale(fri_helper.get_coset_factor());
+            let coset_factor = fri_helper.get_coset_factor(cs.namespace(|| "coset factor"))?;
+            ev_p = ev_p.mul(cs.namespace(|| "scaling of ev_p by coset factor"), coset_factor)?;
 
             let mut t = ev_p.clone();
             let mut running_sum : Num<E> = final_coefficients[0].clone().into();

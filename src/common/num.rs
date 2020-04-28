@@ -81,6 +81,23 @@ impl<E: Engine> AllocatedNum<E> {
         })
     }
 
+    // TODO: now it is a dirty hack
+    pub fn alloc_const<CS: ConstraintSystem<E>>(mut cs: CS, value: E::Fr) -> Result<Self, SynthesisError> {
+
+        let variable = cs.alloc(|| "num", || Ok(value))?;
+        cs.enforce(
+            || "enforce constant", 
+            |lc| lc + variable, 
+            |lc| lc + CS::one(), 
+            |lc| lc + (value, CS::one()),
+        );
+
+        Ok(AllocatedNum {
+            value: Some(value),
+            variable
+        })
+    } 
+
     pub fn alloc_input<CS, F>(
         mut cs: CS,
         value: F,

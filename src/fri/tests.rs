@@ -66,7 +66,7 @@ mod test {
             
             let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
             // we do not count the very first and the last iterations
-            num_of_iters -= 2;
+            num_of_iters -= 1;
             let label = "starting oracle";
 
             let upper_layer_commitment = Labeled::new(
@@ -87,9 +87,10 @@ mod test {
             }
 
             let final_coefficients = Vec::from_stream(cs.namespace(|| "final coefficients"), iter, fri_params.final_degree_plus_one)?;
-            let fri_challenges = Vec::from_stream(cs.namespace(|| "fri challenges"), iter, num_of_iters + 2)?;
+            println!("num fri challenges read: {}", num_of_iters + 1);
+            let fri_challenges = Vec::from_stream(cs.namespace(|| "fri challenges"), iter, num_of_iters + 1)?;
             
-            let mut natural_first_element_indexes = Vec::with_capacity(num_of_iters);
+            let mut natural_first_element_indexes = Vec::with_capacity(fri_params.R);
             for _ in 0..fri_params.R {
                 // we prefer to make natural indexes public for testing purposes
                 let index = AllocatedNum::alloc_input2(cs.namespace(|| "natural index"), iter.next().unwrap())?; 
@@ -153,21 +154,28 @@ mod test {
             let mut iter = self.iter;
             let fri_params = self.fri_params;
 
+            println!("before reading from stream");
+
             let fri_setup = FriSetup::<E, RescueTreeGadget<E, RP, SBOX>>::from_stream(
                 cs.namespace(|| "fri setup"),
                 &mut iter,
                 &fri_params,
             )?;
 
+            println!("1");
+
+            let labels = vec!["starting oracle"];
             let fri_query_rounds = (0..fri_params.R).map(|_| {
 
                 let single_query_data = FriSingleQueryRoundData::from_stream(
                     cs.namespace(|| "fri round"),
                     &mut iter,
-                    fri_params.clone(),
+                    (fri_params.clone(), &labels),
                 );
                 single_query_data
             }).collect::<Result<Vec<_>, _>>()?;
+
+            println!("2");
 
             let is_valid = fri_verifier_gadget.verify_proof(
                 cs.namespace(|| "Validate FRI instance"),
@@ -225,10 +233,12 @@ mod test {
         };
 
         let mut channel = RescueChannel::new(&channel_params);
+        //let natural_indexes = vec![6, 4, 127, 434];
+        let natural_indexes = vec![0];
 
         let fri_params = FriParams {
             collapsing_factor: 2,
-            R: 4,
+            R: natural_indexes.len(),
             initial_degree_plus_one: std::cell::Cell::new(SIZE),
             lde_factor: 4,
             final_degree_plus_one: 4,
@@ -266,8 +276,6 @@ mod test {
             &oracle_params,
         ).expect("FRI must succeed");
 
-        let natural_indexes = vec![6, 4, 127, 434];
-
         let proof = FriIop::<Fr, O, T>::prototype_into_proof(
             fri_proto,
             &batched_oracle,
@@ -302,16 +310,20 @@ mod test {
 
         assert_eq!(result, true); 
 
+        println!("FRI instance is valid");
+
         let mut container : Vec<Fr> = Vec::new();
         upper_layer_commitments[0].1.to_stream(&mut container, ());
         
         let intermidiate_commitments = &proof.commitments;
+        println!("intermidiate commitments len: {}", intermidiate_commitments.len());
         for c in intermidiate_commitments {
             c.to_stream(&mut container, ());
         }
 
         proof.final_coefficients.to_stream(&mut container, fri_params.final_degree_plus_one);
         let num_challenges = fri_challenges.len();
+        println!("num fri challenges: {}", num_challenges);
         fri_challenges.to_stream(&mut container, num_challenges);
 
         let temp : Vec<Fr> = natural_indexes.into_iter().map(|idx| {
@@ -321,6 +333,29 @@ mod test {
             elem
         }).collect();
         temp.to_stream(&mut container, fri_params.R);
+
+        let coset_size = 1 << fri_params.collapsing_factor;
+        let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
+        let top_level_height = crate::common::log2_floor(top_level_oracle_size);
+        
+        let mut num_of_iters = crate::common::log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
+        // we do not count the very first and the last iterations
+        // TODO: investigate, why we have to substract only one (instead of 2)
+        num_of_iters -= 1;
+
+        for (top_layer, intermidiate) in proof.upper_layer_queries.into_iter().zip(proof.queries.into_iter()) 
+        {
+            let top_layer_query = top_layer[0].1.clone();
+            top_layer_query.to_stream(&mut container, (coset_size, top_level_height));
+            
+            let mut cur_height = top_level_height - fri_params.collapsing_factor as usize;
+            assert_eq!(intermidiate.len(), num_of_iters as usize);
+
+            for query in intermidiate.into_iter() {
+                query.to_stream(&mut container, (coset_size, cur_height as usize));
+                cur_height -= fri_params.collapsing_factor as usize;
+            }
+        }
 
         let test_circuit = TestCircuit {
             iter: container.into_iter().map(|x| Some(x)),
