@@ -188,6 +188,8 @@ where
             self.fri_params.clone(),
         )?;
 
+        //self.input_stream.next().unwrap();
+
         let a_com = find_by_label("a", &proof.commitments)?;
         channel.consume(a_com.clone(), unnamed(cs))?;
    
@@ -436,6 +438,8 @@ where
             aggr_challenge: aggregation_challenge,
             omega,
         };
+
+        println!("FRI VERIFIER GADGET");
 
         let mut fri_verifier_gadget = FriVerifierGadget::<E, O, _> {
             collapsing_factor : self.fri_params.collapsing_factor as usize,

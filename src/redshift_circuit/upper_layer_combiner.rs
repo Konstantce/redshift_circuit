@@ -131,6 +131,7 @@ pub fn find_setup_value_by_label<E: Engine, I: OracleGadget<E>>(
     arr: &Vec<Labeled<SinglePolySetupData<E, I>>>,
 ) -> Result<AllocatedNum<E>, SynthesisError>
 {
+    println!("label: {}", label);
     arr.iter().find(|elem| elem.label == label).map(|elem| elem.data.setup_value.clone()).ok_or(SynthesisError::Unknown)
 }
 
@@ -157,6 +158,8 @@ pub fn upper_layer_combiner_impl<E: Engine, I: OracleGadget<E>, CS: ConstraintSy
         (find_by_label("t_mid", &domain_values)?.clone(), find_by_label("t_mid", opening_values)?.clone()),
         (find_by_label("t_high", &domain_values)?.clone(), find_by_label("t_high", opening_values)?.clone()),
     ];
+
+    println!("all pairs found");
        
     let (res1, alpha1) = combine_at_single_point(
         &mut cs, pairs, &evaluation_point, z.clone(), aggr_challenge.clone())?;
@@ -180,12 +183,20 @@ pub fn upper_layer_combiner_impl<E: Engine, I: OracleGadget<E>, CS: ConstraintSy
           find_by_label("c_shifted", opening_values)?.clone() ),
     ];
 
+    println!("all witness triples found");
+
     let (res2, alpha2) = combine_at_two_points(
         &mut cs, witness_triples, &evaluation_point, z.clone(), z_shifted.clone(), aggr_challenge.clone())?;
+
+    println!("after 2-point combiner");
 
     // finally combine setup polynomials q_l, q_r, q_o, q_m, q_c, q_add_sel, s_id, sigma_1, sigma_2, sigma_3
     // which are opened at z and z_setup
     // in current implementation we assume that setup point is the same for all circuit-defining polynomials!
+
+    for elem in opening_values.iter() {
+        println!("label in arr: {}", elem.label);
+    }
 
     let setup_triples : Vec<(AllocatedNum<E>, AllocatedNum<E>, AllocatedNum<E>)> = vec![
         ( find_by_label("q_l", &domain_values)?.clone(), 
@@ -217,8 +228,8 @@ pub fn upper_layer_combiner_impl<E: Engine, I: OracleGadget<E>, CS: ConstraintSy
           find_setup_value_by_label("s_id", setup_polys)? ),
 
         ( find_by_label("sigma_1", &domain_values)?.clone(), 
-          find_by_label("sigma_l", opening_values)?.clone(), 
-          find_setup_value_by_label("sigma_l", setup_polys)? ),
+          find_by_label("sigma_1", opening_values)?.clone(), 
+          find_setup_value_by_label("sigma_1", setup_polys)? ),
 
         ( find_by_label("sigma_2", &domain_values)?.clone(), 
           find_by_label("sigma_2", opening_values)?.clone(), 
@@ -228,6 +239,8 @@ pub fn upper_layer_combiner_impl<E: Engine, I: OracleGadget<E>, CS: ConstraintSy
           find_by_label("sigma_3", opening_values)?.clone(), 
           find_setup_value_by_label("sigma_3", setup_polys)? ),
     ];
+
+    println!("all setup triples found");
 
     let common_setup_point = setup_precomp.setup_point.clone();
 

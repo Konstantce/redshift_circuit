@@ -73,8 +73,8 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &oracle_check)?;
         }
 
-        
-        
+        println!("Initial oracle checked");
+
         // apply combiner function in order to conduct Fri round consistecy check with respect to the topmost layer
         // let n be the size of coset
         // let the values contained inside queries to be (a_1, a_2, ..., a_n), (b_1, b_2, ..., b_n) , ..., (c_1, ..., c_n)
@@ -102,12 +102,16 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
                 Labeled::new(x.label, &x.data.values[i])
                 }).collect();
 
+            println!("before combine");
+
             let res = self.upper_layer_combiner.combine(
                 cs.namespace(|| "upper layer combiner"), 
                 labeled_argument, 
                 &evaluation_points[i]
             )?;
             values.push(res);
+
+            println!("after combine");
         }
 
         println!("UPPER LAYER DOMAIN");
@@ -325,6 +329,7 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             )?;
 
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &flag)?;
+            fri_helper.to_initial_domain();
         }
 
         Ok(final_result)

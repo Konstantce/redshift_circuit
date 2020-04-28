@@ -112,7 +112,7 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, FriParams> for BatchedFriProof
         
         let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
         // we do not count the very first and the last iterations
-        num_of_iters -= 2;
+        num_of_iters -= 1;
 
         let mut cur_height = top_leve_height - fri_params.collapsing_factor as usize;
         let mut commitments = Vec::with_capacity(num_of_iters);

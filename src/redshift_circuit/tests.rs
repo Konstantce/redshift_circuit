@@ -21,16 +21,18 @@ mod test {
     use channel::rescue_channel::RescueChannelGadget;
     
     #[test]
-    fn redshift_recursion_for_fibbonacchi() 
+    fn redshift_recursion_for_fibbonacci() 
     {
         type E = bellman::pairing::bn256::Bn256;
         type O<'a> = FriSpecificRescueTree<'a, Fr, BN256Rescue>;
         type T<'a> = RescueChannel<'a, Fr, BN256Rescue>;
 
         // prepare parameters
+        // TODO: log2 and multicore nt_fft fail on small number of steps (<= 10),
+        // the reason of failure should be additionally investigated
         let a = Fr::one();
         let b = Fr::one();
-        let num_steps = 10;
+        let num_steps = 1000;
 
         let fri_params = FriParams {
             initial_degree_plus_one: std::cell::Cell::new(0),
@@ -57,9 +59,9 @@ mod test {
             a,
             b,
             num_steps,
-            fri_params.clone(),
-            oracle_params,
-            channel_params,
+            &fri_params,
+            &oracle_params,
+            &channel_params,
         ).expect("should pass");
 
         let is_valid = res.0;
@@ -68,10 +70,13 @@ mod test {
 
         assert_eq!(is_valid, true);
 
+        println!("REDSHIFT PROOF DONE");
+
         let mut container = Vec::<Fr>::new();
 
         let coset_size = 1 << fri_params.collapsing_factor;
         let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
+        println!("oracle size: {}", top_level_oracle_size);
         let top_leve_height = log2_floor(top_level_oracle_size);
 
         setup_precomp.to_stream(&mut container, top_leve_height);
@@ -88,6 +93,8 @@ mod test {
 
         type OG<'a> = RescueTreeGadget<'a, E, BN256Rescue, BN256RescueSbox>;
         type TG<'a> = RescueChannelGadget<'a, E, BN256Rescue, BN256RescueSbox>;
+
+        println!("here");
 
         let redshift_recursion_circuit = RedShiftVerifierCircuit::<E, OG, TG, _>::new(
             &rescue_params,

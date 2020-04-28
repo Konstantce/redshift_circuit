@@ -439,14 +439,14 @@ impl<E: Engine> FriUtilsGadget<E> {
         )?;
         
         let shift = self.log_domain_size - self.collapsing_factor;
-        let mut g = self.omega.pow([1 << shift as u64]);
-        g.mul_assign(&self.coset_factor);
+        let g = self.omega.pow([1 << shift as u64]);
 
         let mut res : Vec<Num<E>> = Vec::with_capacity(self.wrapping_factor);
 
         for i in 0..self.wrapping_factor {
 
-            let coef = g.pow([Self::bitreverse(i, self.wrapping_factor) as u64]);
+            let mut coef = g.pow([Self::bitreverse(i, self.wrapping_factor) as u64]);
+            coef.mul_assign(&self.coset_factor);
             let mut num : Num<E> = coset_omega.clone().into();
             num.scale(coef); 
             res.push(num);

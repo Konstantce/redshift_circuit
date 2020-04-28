@@ -209,8 +209,8 @@ impl<E: Engine, RP: RescueParams<E::Fr>, SBOX: RescueSbox<E>> RescueGadget<E, RP
                         }
                     }
                     // We've already squeezed out all available elements
-                    unreachable!("Sponge number is too small");
-                    //self.sponge = SpongeState::Absorbing(vec![]);
+                    //unreachable!("Sponge number is too small");
+                    self.sponge = SpongeState::Absorbing(vec![]);
                 }
             }
         }

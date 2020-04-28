@@ -36,7 +36,7 @@ pub fn log2_floor(num: usize) -> usize {
 }
 
 pub fn find_by_label<X: Clone>(label: Label, arr: &Vec<Labeled<X>>) -> Result<X, SynthesisError> {
-
+    println!("label: {}", label);
     arr.iter().find(|elem| elem.label == label).map(|elem| elem.data.clone()).ok_or(SynthesisError::Unknown)
 }
 
