@@ -13,7 +13,6 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 bellman = {package = "bellman_ce", path = "C:/Users/Konstantce/Desktop/bellman/bellman", features=["multicore"]}
 
-
 byteorder = "1"
 blake2_rfc =  {package = "blake2-rfc", version = "0.2.18"}
 rand = "0.4"

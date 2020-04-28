@@ -27,6 +27,8 @@ use super::boolean::{
     AllocatedBit
 };
 
+use std::mem;
+
 pub struct AllocatedNum<E: Engine> {
     value: Option<E::Fr>,
     variable: Variable
@@ -42,13 +44,7 @@ impl<E: Engine> Clone for AllocatedNum<E> {
 }
 
 impl<E: Engine> AllocatedNum<E> {
-    // pub fn default<CS: ConstraintSystem<E>>() -> Self {
-    //     AllocatedNum {
-    //         value: Some(E::Fr::one()),
-    //         variable: CS::one()
-    //     }
-    // }
-
+   
     pub fn alloc<CS, F>(
         mut cs: CS,
         value: F,
@@ -943,33 +939,7 @@ impl<E: Engine> Num<E> {
         };
 
         self.value = newval;
-        let mut lc = LinearCombination::zero();
-        // std::mem::swap(&mut self.lc, &mut lc);
-        use std::collections::HashMap;
-        let mut final_coeffs: HashMap<bellman::Variable, E::Fr> = HashMap::new();
-        for (var, coeff) in self.lc.as_ref() {
-            if final_coeffs.get(var).is_some() {
-                if let Some(existing_coeff) = final_coeffs.get_mut(var) {
-                    existing_coeff.add_assign(&coeff);
-                } 
-            } else {
-                final_coeffs.insert(*var, *coeff);
-            }
-        }
-
-        for (var, coeff) in other.lc.as_ref() {
-            if final_coeffs.get(var).is_some() {
-                if let Some(existing_coeff) = final_coeffs.get_mut(var) {
-                    existing_coeff.add_assign(&coeff);
-                }
-            } else {
-                final_coeffs.insert(*var, *coeff);
-            }
-        }
-        for (var, coeff) in final_coeffs.into_iter() {
-            lc = lc + (coeff, var);
-        }
-        self.lc = lc;
+        self.lc = std::mem::replace(&mut self.lc, LinearCombination::zero()) + &other.lc;  
     }
 
     pub fn sub_assign(
@@ -987,33 +957,7 @@ impl<E: Engine> Num<E> {
         };
 
         self.value = newval;
-        let mut lc = LinearCombination::zero();
-        // std::mem::swap(&mut self.lc, &mut lc);
-        use std::collections::HashMap;
-        let mut final_coeffs: HashMap<bellman::Variable, E::Fr> = HashMap::new();
-        for (var, coeff) in self.lc.as_ref() {
-            if final_coeffs.get(var).is_some() {
-                if let Some(existing_coeff) = final_coeffs.get_mut(var) {
-                    existing_coeff.add_assign(&coeff);
-                } 
-            } else {
-                final_coeffs.insert(*var, *coeff);
-            }
-        }
-
-        for (var, coeff) in other.lc.as_ref() {
-            if final_coeffs.get(var).is_some() {
-                if let Some(existing_coeff) = final_coeffs.get_mut(var) {
-                    existing_coeff.sub_assign(&coeff);
-                }
-            } else {
-                final_coeffs.insert(*var, *coeff);
-            }
-        }
-        for (var, coeff) in final_coeffs.into_iter() {
-            lc = lc + (coeff, var);
-        }
-        self.lc = lc;
+        self.lc = std::mem::replace(&mut self.lc, LinearCombination::zero()) - &other.lc; 
     }
 
     /// check is the combination in question exactly contains the only one element (or even empty)

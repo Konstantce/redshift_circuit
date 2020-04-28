@@ -106,8 +106,9 @@ impl<E: Engine> FriUtilsGadget<E> {
     pub fn get_bottom_layer_omega<CS>(&mut self, mut cs: CS) -> Result<&AllocatedNum<E>, SynthesisError>
     where CS: ConstraintSystem<E> 
     {
-        if self.layer != self.num_iters - 1 {
-            print!("layer {}. num_of_iters: {}", self.layer, self.num_iters);
+        // TODO: also investigate here
+        if self.layer != self.num_iters {
+            println!("layer {}. num_of_iters: {}", self.layer, self.num_iters);
             return Err(SynthesisError::Unknown);
         }
 
@@ -194,12 +195,13 @@ impl<E: Engine> FriUtilsGadget<E> {
         assert!(self.log_domain_size > 0);
 
         if self.first_pass {
-            let constrainted_omega_inv = self.constrainted_omega_inv_arr[self.layer-1].square(
-                cs.namespace(|| "generator (inv) of domain constrainted")
+            let omega_inv = self.omega_inv.clone();
+            let res = AllocatedNum::alloc_const(
+                cs.namespace(|| "constrainteddomain omega"), 
+                omega_inv,
             ).expect("should create");
-            self.constrainted_omega_inv_arr.push(constrainted_omega_inv);
+            self.constrainted_omega_inv_arr.push(res);
         }
-       
     }
 
     pub fn to_initial_domain(&mut self) {
@@ -223,7 +225,7 @@ impl<E: Engine> FriUtilsGadget<E> {
         &self, 
         natural_index: Vec<Boolean>
     ) -> Vec<Boolean> {
-        natural_index.into_iter().take(self.log_domain_size).rev().collect()
+        natural_index.into_iter().take(self.get_cur_height()).rev().collect()
     }
 
     // return the tree index of the current element (when coset combined)
@@ -306,11 +308,13 @@ impl<E: Engine> FriUtilsGadget<E> {
         let mut this_level_values : Vec<AllocatedNum<E>> = vec![];
         let mut next_level_values : Vec<AllocatedNum<E>>;
 
-        let coset_omega_inv = AllocatedNum::pow(
+        let mut coset_omega_inv = AllocatedNum::pow(
             cs.namespace(|| "get coset specific omega"),
             self.get_cur_layer_omega_inv(),
             coset_tree_idx.rev(),
         )?;
+
+        println!("COSET OMEGA: {}", coset_omega_inv.get_value().unwrap());
 
         let shift = self.log_domain_size - self.collapsing_factor;
         let g = self.omega_inv.pow([1 << shift as u64]);
@@ -359,7 +363,7 @@ impl<E: Engine> FriUtilsGadget<E> {
                 v_even.mut_add_number_with_coeff(&f1, one);
 
                 let mut v_odd : Num<E> = f0.clone().into();
-                v_even.mut_add_number_with_coeff(&f1, minus_one);
+                v_odd.mut_add_number_with_coeff(&f1, minus_one);
                 v_odd = Num::mul_by_var_with_coeff(
                     cs.namespace(|| "scale by coset omega"),
                     &v_odd, 
@@ -376,7 +380,7 @@ impl<E: Engine> FriUtilsGadget<E> {
                             (Some(mut v_odd), Some(v_even), Some(challenge)) => {
                                 v_odd.mul_assign(&challenge);
                                 v_odd.add_assign(&v_even);
-                                v_odd.add_assign(&self.two_inv);
+                                v_odd.mul_assign(&self.two_inv);
                                 Ok(v_odd)
                             },
                             (_, _, _) => Err(SynthesisError::AssignmentMissing),
@@ -400,7 +404,7 @@ impl<E: Engine> FriUtilsGadget<E> {
             if wrapping_step != self.collapsing_factor - 1 {
                 num_bits_to_bitreverse -= 1;
                 //omega_inv.square();
-                //coset_omega_inv = coset_omega_inv.square(cs.namespace(|| "construct next coset omega"))?;
+                coset_omega_inv = coset_omega_inv.square(cs.namespace(|| "construct next coset omega"))?;
             
                 this_level_values = next_level_values;
             } 
