@@ -30,14 +30,14 @@ mod test {
         // prepare parameters
         // TODO: log2 and multicore nt_fft fail on small number of steps (<= 10),
         // the reason of failure should be additionally investigated
-        let a = Fr::zero();
+        let a = Fr::one();
         let b = Fr::one();
         let num_steps = 1000;
 
         let fri_params = FriParams {
             initial_degree_plus_one: std::cell::Cell::new(0),
             lde_factor: 16,
-            R: 1,
+            R: 20,
             collapsing_factor: 2,
             final_degree_plus_one: 1
         };

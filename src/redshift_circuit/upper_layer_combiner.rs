@@ -55,6 +55,8 @@ fn combine_at_single_point<E: Engine, CS: ConstraintSystem<E>>(
     let mut temp : Num<E> = x.clone();
     temp -= x_1;
     let res = Num::div(cs.namespace(|| ""), &res, &temp)?;
+
+    println!("first sum : {}", res.get_value().unwrap());
     
     Ok((res, aggr_mult))
 }
@@ -87,7 +89,7 @@ fn combine_at_two_points<E: Engine, CS: ConstraintSystem<E>>(
     let mut slope_denom : Num<E> = x_2.clone().into();
     slope_denom -= x_1.clone();
     
-    slope = Num::mul(cs.namespace(|| ""), &slope, &slope_denom)?.into();
+    slope = Num::div(cs.namespace(|| ""), &slope, &slope_denom)?.into();
 
     let mut res = Num::zero(); 
     let mut aggr_mult = alpha.clone();

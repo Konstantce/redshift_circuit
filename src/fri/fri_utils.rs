@@ -431,7 +431,6 @@ impl<E: Engine> FriUtilsGadget<E> {
         
         let shift = self.log_domain_size - self.collapsing_factor;
         let g = self.omega.pow([1 << shift as u64]);
-        println!("magic g: {}", g);
 
         let mut res : Vec<Num<E>> = Vec::with_capacity(self.wrapping_factor);
 
@@ -439,7 +438,7 @@ impl<E: Engine> FriUtilsGadget<E> {
 
             let mut coef = g.pow([Self::bitreverse(i, self.collapsing_factor) as u64]);
             coef.mul_assign(&self.coset_factor);
-            println!("coef: {}", coef);
+
             let mut num : Num<E> = coset_omega.clone().into();
             num.scale(coef); 
             res.push(num);
