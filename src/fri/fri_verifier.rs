@@ -53,8 +53,6 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
         let oracle = I::new(oracle_params);
         let mut final_result = Boolean::Constant(true);
 
-        println!("fri verifier start");
-
         for labeled_query in upper_layer_queries.iter() {
 
             let label = &labeled_query.label;
@@ -71,9 +69,10 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             )?;
 
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &oracle_check)?;
+            
         }
 
-        println!("Initial oracle checked");
+        
 
         // apply combiner function in order to conduct Fri round consistecy check with respect to the topmost layer
         // let n be the size of coset
@@ -102,26 +101,12 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
                 Labeled::new(x.label, &x.data.values[i])
                 }).collect();
 
-            println!("before combine");
-
             let res = self.upper_layer_combiner.combine(
                 cs.namespace(|| "upper layer combiner"), 
                 labeled_argument, 
                 &evaluation_points[i]
             )?;
             values.push(res);
-
-            println!("after combine");
-        }
-
-        println!("UPPER LAYER DOMAIN");
-        for elem in values.iter() {
-            println!("{}", elem.get_value().unwrap());
-        }
-
-        println!("INITIAL COSET IDX");
-        for e in coset_idx.iter() {
-            println!("{}", e.get_value().unwrap());
         }
 
         let mut previous_layer_element = fri_helper.coset_interpolation_value(
@@ -131,29 +116,14 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             &fri_challenges[0..coset_size], 
         )?;
 
-        
-
-        println!("queries len: {}", queries.len());
-        println!("commitments len: {}", commitments.len());
-        println!("fri challenges -len: {}", fri_challenges.chunks(collapsing_factor).len());
-
         for (i, ((query, commitment), challenges)) 
             in queries.into_iter().zip(commitments.iter()).zip(fri_challenges.chunks(collapsing_factor).skip(1)).enumerate() 
-        {
-            println!("next iter");
-            
+        {            
             // adapt fri_helper for smaller domain
             fri_helper.next_domain(cs.namespace(|| "shrink domain to next layer"));
             let (new_coset_idx, offset) = fri_helper.get_next_layer_coset_idx_extended(coset_idx);
             coset_idx = new_coset_idx;
 
-            println!("COSET IDX");
-        for e in coset_idx.iter() {
-            println!("{}", e.get_value().unwrap());
-        }
-
-            println!("coset_idx_len: {}", coset_idx.len());
-            
             // oracle proof for current layer!
             let oracle_check = oracle.validate(
                 cs.namespace(|| "Oracle proof"),
@@ -165,23 +135,14 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             )?;
 
             final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &oracle_check)?;
-            
-            println!("CIRCUIT QUERIES!");
-            for elem in query.values.iter() {
-                println!("{}", elem.get_value().unwrap())
-            }
-
+           
             // round consistency check (rcc) : previous layer element interpolant has already been stored
             // compare it with current layer element (which is chosen from query values by offset)
-            println!("offset len: {}", offset.len());
             let cur_layer_element = fri_helper.choose_element_in_coset(
                 cs.namespace(|| "choose element from coset by index"),
                 &query.values[..],
                 offset.into_iter(),
             )?; 
-
-            println!("interpolant: {}", previous_layer_element.get_value().unwrap());
-            println!("current: {}", cur_layer_element.get_value().unwrap());
 
             let ds = AllocatedNum::alloc_const(cs.namespace(|| "error"), E::Fr::one())?;
             let rcc_flag = AllocatedNum::equals(
@@ -196,8 +157,6 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
              
             }
 
-
-            println!("interpolant before");
             //recompute interpolant (using current layer for now) 
             //and store it for use on the next iteration (or for final check)
             previous_layer_element = fri_helper.coset_interpolation_value(
@@ -206,15 +165,8 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
                 coset_idx.iter(),
                 &challenges, 
             )?;
-            println!("interpolant after");
             
         }
-
-        
-            
-        println!("heree");
-
-        
 
         // finally we compare the last interpolant with the value f(\omega), 
         // where f is built from coefficients
@@ -225,16 +177,11 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             final_coefficients[0].clone()
         }
         else {
-            println!("aaa");
             fri_helper.next_domain(cs.namespace(|| "shrink domain to final layer"));
-            println!("aaa");
             let (coset_idx, offset) = fri_helper.get_next_layer_coset_idx_extended(coset_idx);
-            println!("aaa");
             let natural_index = fri_helper.get_natural_idx_for_coset_idx_offset(&coset_idx[..], &offset[..]);
 
-
             let omega = fri_helper.get_bottom_layer_omega(cs.namespace(|| "final layer generator"))?;
-            println!("got bottom layer");
             let mut ev_p = AllocatedNum::pow(
                 cs.namespace(|| "poly eval: evaluation point"), 
                 omega, 
@@ -261,9 +208,8 @@ impl<E: Engine, I: OracleGadget<E>, C: UpperLayerCombiner<E>> FriVerifierGadget<
             &previous_layer_element, 
             &val,
         )?;
+        
         final_result = Boolean::and(cs.namespace(|| "and"), &final_result, &flag)?;
-
-        println!("At the end!");
         Ok(final_result)
     }
 

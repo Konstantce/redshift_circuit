@@ -30,14 +30,14 @@ mod test {
         // prepare parameters
         // TODO: log2 and multicore nt_fft fail on small number of steps (<= 10),
         // the reason of failure should be additionally investigated
-        let a = Fr::one();
+        let a = Fr::zero();
         let b = Fr::one();
         let num_steps = 1000;
 
         let fri_params = FriParams {
             initial_degree_plus_one: std::cell::Cell::new(0),
             lde_factor: 16,
-            R: 4,
+            R: 1,
             collapsing_factor: 2,
             final_degree_plus_one: 1
         };
@@ -70,13 +70,12 @@ mod test {
 
         assert_eq!(is_valid, true);
 
-        println!("REDSHIFT PROOF DONE");
+        println!("REDSHIFT PROOF DONE XXX");
 
         let mut container = Vec::<Fr>::new();
 
         let coset_size = 1 << fri_params.collapsing_factor;
         let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
-        println!("oracle size: {}", top_level_oracle_size);
         let top_leve_height = log2_floor(top_level_oracle_size);
 
         setup_precomp.to_stream(&mut container, top_leve_height);
@@ -94,19 +93,24 @@ mod test {
         type OG<'a> = RescueTreeGadget<'a, E, BN256Rescue, BN256RescueSbox>;
         type TG<'a> = RescueChannelGadget<'a, E, BN256Rescue, BN256RescueSbox>;
 
-        println!("here");
+        let output = fibbonacci(&a, &b, num_steps);
 
         let redshift_recursion_circuit = RedShiftVerifierCircuit::<E, OG, TG, _>::new(
             &rescue_params,
             oracle_params, 
             fri_params, 
             iter, 
-            vec![a, b],
+            vec![a, b, output],
         );
 
         // verify that circuit is satifiable
         let mut test_assembly = TestConstraintSystem::new();
         redshift_recursion_circuit.synthesize(&mut test_assembly).expect("should synthesize");
+
+        if !test_assembly.is_satisfied() 
+        {
+            println!("UNSATISFIED AT: {}", test_assembly.which_is_unsatisfied().unwrap());
+        }
         assert!(test_assembly.is_satisfied(), "some constraints are not satisfied");
 
         println!("Num of constraints: {}", test_assembly.num_constraints());

@@ -108,7 +108,6 @@ impl<E: Engine> FriUtilsGadget<E> {
     {
         // TODO: also investigate here
         if self.layer != self.num_iters {
-            println!("layer {}. num_of_iters: {}", self.layer, self.num_iters);
             return Err(SynthesisError::Unknown);
         }
 
@@ -253,7 +252,6 @@ impl<E: Engine> FriUtilsGadget<E> {
     ) -> (&'a [Boolean], &'a [Boolean])
     {
         let (new_offset, new_coset_idx) = coset_idx.split_at(self.collapsing_factor);
-        println!("coset idx len: {}, offset_len: {}", new_coset_idx.len(), new_offset.len());
         (new_coset_idx, new_offset)
     }
 
@@ -272,7 +270,6 @@ impl<E: Engine> FriUtilsGadget<E> {
     where CS: ConstraintSystem<E>, I : Iterator<Item = &'a Boolean>,
     {
         assert_eq!(coset.len(), self.wrapping_factor);
-        println!("coset len: {}", coset.len());
 
         let mut array : Vec<AllocatedNum<E>> = Vec::with_capacity(coset.len()/2);
         let mut input = &coset[..];
@@ -313,8 +310,6 @@ impl<E: Engine> FriUtilsGadget<E> {
             self.get_cur_layer_omega_inv(),
             coset_tree_idx.rev(),
         )?;
-
-        println!("COSET OMEGA: {}", coset_omega_inv.get_value().unwrap());
 
         let shift = self.log_domain_size - self.collapsing_factor;
         let g = self.omega_inv.pow([1 << shift as u64]);
@@ -416,7 +411,7 @@ impl<E: Engine> FriUtilsGadget<E> {
         interpolant.ok_or(SynthesisError::Unknown)   
     }
 
-    pub fn get_combiner_eval_points<'a, CS, I>(&self, mut cs: CS, coset_tree_idx : I) -> Result<Vec<Num<E>>, SynthesisError>
+    pub fn get_combiner_eval_points<'a, CS, I>(&mut self, mut cs: CS, coset_tree_idx : I) -> Result<Vec<Num<E>>, SynthesisError>
     where CS: ConstraintSystem<E>, I: DoubleEndedIterator<Item = &'a Boolean> {
 
         // let w - generator of current domain
@@ -424,13 +419,9 @@ impl<E: Engine> FriUtilsGadget<E> {
         // let coset_omega = w^bitreverse(coset_idx)
         // let g = w^(1000000) = w^(10 * k), where k = log_domain_size - collapsing_factor
         // this method returns array [coset_omega * g^bitreverse(i) * coset_factor]
-
         // Note: we don't constraint omegas by default (only omegas inverse)
 
-        let constrainted_omega = AllocatedNum::alloc(
-            cs.namespace(|| "generator of domain constrainted"), 
-            || {Ok(self.omega.clone())}
-        ).expect("should create");
+        let constrainted_omega = self.get_topmost_layer_omega(cs.namespace(|| "top layer omega"))?;
 
         let coset_omega = AllocatedNum::pow(
             cs.namespace(|| "get coset specific omega"), 
@@ -440,13 +431,15 @@ impl<E: Engine> FriUtilsGadget<E> {
         
         let shift = self.log_domain_size - self.collapsing_factor;
         let g = self.omega.pow([1 << shift as u64]);
+        println!("magic g: {}", g);
 
         let mut res : Vec<Num<E>> = Vec::with_capacity(self.wrapping_factor);
 
         for i in 0..self.wrapping_factor {
 
-            let mut coef = g.pow([Self::bitreverse(i, self.wrapping_factor) as u64]);
+            let mut coef = g.pow([Self::bitreverse(i, self.collapsing_factor) as u64]);
             coef.mul_assign(&self.coset_factor);
+            println!("coef: {}", coef);
             let mut num : Num<E> = coset_omega.clone().into();
             num.scale(coef); 
             res.push(num);

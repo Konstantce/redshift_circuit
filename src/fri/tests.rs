@@ -236,7 +236,7 @@ mod test {
 
         let mut channel = RescueChannel::new(&channel_params);
         //let natural_indexes = vec![6, 4, 127, 434];
-        let natural_indexes = vec![6, 4, 127, 434];
+        let natural_indexes = vec![6, 4, 127, 434, 731];
 
         let fri_params = FriParams {
             collapsing_factor: 2,

@@ -177,6 +177,8 @@ impl<'a, E: Engine, RP: RescueParams<E::Fr>, SBOX: RescueSbox<E>> OracleGadget<E
         proof: &Self::Proof,
     ) -> Result<Boolean, SynthesisError> {
 
+        println!("commitment: {}", commitment.get_value().unwrap());
+
         self.validate_impl(
             cs,
             height, 

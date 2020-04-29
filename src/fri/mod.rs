@@ -65,7 +65,6 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, (FriParams, &[Label])> for Fri
         let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
         // we do not count the very first and the last iterations
         num_of_iters -= 1;
-        println!("from stream num_iters: {}", num_of_iters);
         
         let mut upper_layer_queries = Vec::with_capacity(labels.len());
 
@@ -81,7 +80,6 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, (FriParams, &[Label])> for Fri
         let mut queries = Vec::with_capacity(num_of_iters);
 
         for _ in 0..num_of_iters {
-            println!("reading query");
             let query = Query::from_stream(
                 cs.namespace(|| "intermidiate query"), 
                 iter, 

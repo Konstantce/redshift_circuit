@@ -57,10 +57,10 @@ where E: Engine, CS: ConstraintSystem<E>
     let mut numerator : Num<E> = point.into();
     numerator.sub_assign(&Num::from_constant(omega_inv, &cs));
 
-    let mut denoninator : Num<E> = point_in_pow_n.into();
-    denoninator.sub_assign(&Num::from_constant(&E::Fr::one(), &cs));
+    let mut denominator : Num<E> = point_in_pow_n.into();
+    denominator.sub_assign(&Num::from_constant(&E::Fr::one(), &cs));
 
-    Num::div(cs.namespace(|| "div"), &numerator, &denoninator)
+    Num::div(cs.namespace(|| "div"), &numerator, &denominator)
 }
 
 
@@ -78,7 +78,7 @@ pub fn evaluate_lagrange_poly<E: Engine, CS: ConstraintSystem<E>>(
 
     // L_0(X) = (Z_H(X) / (X - 1)) * (1/n) and L_0(1) = 1
     // L_k(omega) = 1 = L_0(omega * omega^-k)
-    // L_k(z) = L_0(z * omega^-k) = (1/n) * (z^n - 1)/(z * omega^{-k} - 1)
+    // L_k(z) = L_0(z * omega^-k) = (1/n-1) * (z^n - 1)/(z * omega^{-k} - 1)
 
     // TODO: I think the code above has a bug - the scale coefficient should be 1/(n-1) instead of n
 
@@ -87,16 +87,16 @@ pub fn evaluate_lagrange_poly<E: Engine, CS: ConstraintSystem<E>>(
 
     let omega_inv_pow = omega_inv.pow([poly_number as u64]);
 
-    let mut denoninator : Num<E> = point.into();
-    denoninator.scale(omega_inv_pow);
-    numerator.sub_assign(&Num::from_constant(&E::Fr::one(), &cs));
+    let mut denominator : Num<E> = point.into();
+    denominator.scale(omega_inv_pow);
+    denominator.sub_assign(&Num::from_constant(&E::Fr::one(), &cs));
 
     let mut repr = E::Fr::zero().into_repr();
     repr.as_mut()[0] = vahisning_size as u64;
     let size_fe = E::Fr::from_repr(repr).expect("is a valid representation");
-    numerator.scale(size_fe);
+    denominator.scale(size_fe);
 
-    Num::div(cs.namespace(|| "div"), &numerator, &denoninator)
+    Num::div(cs.namespace(|| "div"), &numerator, &denominator)
 }
 
 
@@ -170,8 +170,9 @@ where
     ) -> Result<(), SynthesisError> {
 
         let coset_size = 1 << self.fri_params.collapsing_factor;
-        let n = self.fri_params.initial_degree_plus_one.get();
-        let top_level_oracle_size = (n * self.fri_params.lde_factor) / coset_size;
+        let domain_size = self.fri_params.initial_degree_plus_one.get();
+        let n = domain_size - 1;
+        let top_level_oracle_size = (domain_size * self.fri_params.lde_factor) / coset_size;
         let top_level_height = log2_floor(top_level_oracle_size);
 
         let mut channel = T::new(self.channel_params);
@@ -256,15 +257,15 @@ where
 
         // compute the righthandsize term: T_low(z) + T_mid(z) * z^n + T_high(z) * z^(2n)
 
-        let decomposed_n = u64_into_boolean_vec_le(unnamed(cs), Some(n as u64))?;
-        let z_in_pow_n = AllocatedNum::pow(unnamed(cs), &z, decomposed_n.iter())?;
+        let decomposed_domain_size = u64_into_boolean_vec_le(unnamed(cs), Some(domain_size as u64))?;
+        let z_in_pow_domain_size = AllocatedNum::pow(unnamed(cs), &z, decomposed_domain_size.iter())?;
 
         let mut rhs : Num<E> = t_low_at_z.clone().into();
-        let mid_term = t_mid_at_z.mul(unnamed(cs), &z_in_pow_n)?;
+        let mid_term = t_mid_at_z.mul(unnamed(cs), &z_in_pow_domain_size)?;
         rhs.mut_add_number_with_coeff(&mid_term, E::Fr::one());
 
-        let z_in_pow_2n = z_in_pow_n.square(unnamed(cs))?;
-        let highest_term = t_high_at_z.mul(unnamed(cs), &z_in_pow_2n)?;
+        let z_in_pow_2_domain_size = z_in_pow_domain_size.square(unnamed(cs))?;
+        let highest_term = t_high_at_z.mul(unnamed(cs), &z_in_pow_2_domain_size)?;
         rhs.mut_add_number_with_coeff(&highest_term, E::Fr::one());
 
         // begin computing the lhs term
@@ -272,26 +273,25 @@ where
         // prepare public inputs 
         // TODO: check if I have taken the right domain (or increase by LDE factor?)
 
-        let domain_size = n;
         let domain = Domain::<E::Fr>::new_for_size(domain_size as u64).expect("domain of this size should exist");
         let omega = domain.generator;
         let omega_inv = omega.inverse().expect("must exist");
 
-        let l_0_at_z = evaluate_lagrange_poly(unnamed(cs), n, 0, &omega_inv, z.clone(), z_in_pow_n.clone())?;
+        let l_0_at_z = evaluate_lagrange_poly(unnamed(cs), domain_size, 0, &omega_inv, z.clone(), z_in_pow_domain_size.clone())?;
         let mut PI_at_z = Num::zero();
 
         for (i, val) in self.public_inputs.into_iter().enumerate() {
             let input = AllocatedNum::alloc_input(cs.namespace(|| "allocating public input"), || Ok(val))?;
             let langrange_coef = match i {
                 0 => l_0_at_z.clone(),
-                _ => evaluate_lagrange_poly(unnamed(cs), n, i, &omega_inv, z.clone(), z_in_pow_n.clone())?,
+                _ => evaluate_lagrange_poly(unnamed(cs), domain_size, i, &omega_inv, z.clone(), z_in_pow_domain_size.clone())?,
             };
             let temp = input.mul(unnamed(cs),&langrange_coef)?;
             PI_at_z.sub_assign(&temp.into());
         }
 
-        let mut inverse_vanishing_at_z = evaluate_inverse_vanishing_poly(unnamed(cs), n, &omega_inv, z.clone(), z_in_pow_n.clone())?;
-        let l_n_minus_one_at_z = evaluate_lagrange_poly(unnamed(cs), n, n-1, &omega_inv, z.clone(), z_in_pow_n.clone())?;
+        let mut inverse_vanishing_at_z = evaluate_inverse_vanishing_poly(unnamed(cs), domain_size, &omega_inv, z.clone(), z_in_pow_domain_size.clone())?;
+        let l_n_minus_one_at_z = evaluate_lagrange_poly(unnamed(cs), domain_size, n-1, &omega_inv, z.clone(), z_in_pow_domain_size.clone())?;
 
         // (q_l a + q_r b + q_o c + q_m a * b + q_c + q_add_sel q_next) * inv_vanishing_poly
 
@@ -301,7 +301,7 @@ where
             res += q_l_at_z.mul(unnamed(cs), &a_at_z)?;
             res += q_r_at_z.mul(unnamed(cs), &b_at_z)?;  
             res += q_o_at_z.mul(unnamed(cs), &c_at_z)?;
-            res += q_m_at_z.mul(unnamed(cs), &a_at_z)?;
+            res += q_m_at_z.mul(unnamed(cs), &a_at_z)?.mul(unnamed(cs), &b_at_z)?;
         
             // add additional shifted selector
             res += q_add_sel_at_z.mul(unnamed(cs), &c_shifted_at_z)?;
@@ -330,7 +330,6 @@ where
             let mut tmp : Num<E> = s_id_at_z.mul(unnamed(cs), &beta)?.into();
             tmp += a_at_z.clone();
             tmp += gamma.clone();
-            
             res = Num::mul(unnamed(cs), &res, &tmp)?.into();
             
             tmp = s_id_at_z.clone().into();
@@ -371,7 +370,7 @@ where
             tmp += gamma.clone();
             res = Num::mul(unnamed(cs), &res, &tmp)?.into();
            
-            res -= z_1_shifted_at_z.clone();
+            res -= z_2_shifted_at_z.clone();
 
             inverse_vanishing_at_z = inverse_vanishing_at_z.mul(unnamed(cs), &alpha)?;
             Num::mul(unnamed(cs), &res, &inverse_vanishing_at_z.clone().into())?
@@ -401,7 +400,7 @@ where
         lhs += term3;
         lhs += term4;
         lhs += term5;
-
+        
         // compare!
         let unit = Num::from_constant(&E::Fr::one(), cs);
         Num::enforce(
@@ -412,7 +411,6 @@ where
         );
 
         // Fri validation starts from here
-
         let aggregation_challenge = channel.produce_challenge(unnamed(cs))?;
 
         let mut upper_layer_commitments = proof.commitments;
@@ -426,7 +424,8 @@ where
         let natural_first_element_indexes = (0..self.fri_params.R).map(|_| {
             let packed = channel.produce_challenge(unnamed(cs))?;
             let mut bits = packed.into_bits_le(unnamed(cs))?;
-            bits.truncate(32);
+            bits.truncate(64);
+
             
             Ok(bits)
         }).collect::<Result<_, SynthesisError>>()?;
@@ -439,9 +438,7 @@ where
             omega,
         };
 
-        println!("FRI VERIFIER GADGET");
-
-        let mut fri_verifier_gadget = FriVerifierGadget::<E, O, _> {
+        let fri_verifier_gadget = FriVerifierGadget::<E, O, _> {
             collapsing_factor : self.fri_params.collapsing_factor as usize,
             //number of iterations done during FRI query phase
             num_query_rounds : self.fri_params.R,
