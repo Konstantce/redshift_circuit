@@ -18,13 +18,13 @@ use bellman::{
     Variable
 };
 
-use bellman::redshift::redshift::adaptor::*;
-use bellman::redshift::redshift::test_assembly::*;
-use bellman::redshift::redshift::cs::Circuit as PlonkCircuit;
-
 use common::num::*;
 
 pub mod bn256_rescue_sbox;
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+pub(crate) static RESCUE_PERMUTATIONS_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub trait RescueSbox<E: Engine>: Clone + Copy {
 
@@ -182,6 +182,7 @@ impl<E: Engine, RP: RescueParams<E::Fr>, SBOX: RescueSbox<E>> RescueGadget<E, RP
                 }
 
                 // We've already absorbed as many elements as we can
+                RESCUE_PERMUTATIONS_COUNT.fetch_add(1, Ordering::SeqCst);
                 rescue_duplex::<E, _, RP, SBOX>(&mut self.state, input, cs.namespace(|| "rescue duplex"), params)?;
                 self.sponge = SpongeState::absorb(val);
             }
@@ -198,6 +199,7 @@ impl<E: Engine, RP: RescueParams<E::Fr>, SBOX: RescueSbox<E>> RescueGadget<E, RP
         loop {
             match self.sponge {
                 SpongeState::Absorbing(ref mut input) => {
+                    RESCUE_PERMUTATIONS_COUNT.fetch_add(1, Ordering::SeqCst);
                     self.sponge = SpongeState::Squeezing(rescue_duplex::<E, _, RP, SBOX>(
                         &mut self.state,
                         input,
@@ -234,6 +236,10 @@ mod test {
 
     use super::bn256_rescue_sbox::BN256RescueSbox;
     use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
+
+    use bellman::redshift::redshift::adaptor::*;
+    use bellman::redshift::redshift::test_assembly::*;
+    use bellman::redshift::redshift::cs::Circuit as PlonkCircuit;
 
     #[test]
     fn test_rescue_gadget() {

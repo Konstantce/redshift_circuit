@@ -193,7 +193,7 @@ impl<E: Engine> ConstraintSystem<E> for NamingObliviousConstraintSystem<E> {
     {
         let index = self.aux.len();
         let path = compute_path(&self.current_namespace, annotation().into());
-        self.aux.push((f()?, path.clone()));
+        //self.aux.push((f()?, path.clone()));
         let var = Variable::new_unchecked(Index::Aux(index));
        
         Ok(var)
@@ -208,7 +208,7 @@ impl<E: Engine> ConstraintSystem<E> for NamingObliviousConstraintSystem<E> {
     {
         let index = self.inputs.len();
         let path = compute_path(&self.current_namespace, annotation().into());
-        self.inputs.push((f()?, path.clone()));
+        //self.inputs.push((f()?, path.clone()));
         let var = Variable::new_unchecked(Index::Input(index));
 
         Ok(var)

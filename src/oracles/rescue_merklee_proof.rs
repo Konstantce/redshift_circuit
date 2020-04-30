@@ -207,8 +207,15 @@ mod test {
     use hashes::rescue::*;
     use hashes::rescue::bn256_rescue_sbox::BN256RescueSbox;
 
+    use bellman::redshift::redshift::adaptor::*;
+    use bellman::redshift::redshift::test_assembly::*;
+    use bellman::redshift::redshift::cs::Circuit as PlonkCircuit;
+
     use std::iter::FromIterator;
     use super::*;
+
+    use std::time::{Duration, Instant};
+    use std::thread::sleep;
 
     pub fn log2_floor(num: usize) -> usize {
         assert!(num > 0);
@@ -290,7 +297,8 @@ mod test {
 
         let bn256_rescue_params = BN256Rescue::default();
 
-        let size = 1024;
+        // size = 2^20
+        let size = 1048576;
         let values_per_leaf = 4;
         let index = 42;
 
@@ -307,36 +315,41 @@ mod test {
                 cur.double();
                 Some(res)
             }).collect();
-
+            
+            let now = Instant::now();
             let tree = FriSpecificRescueTree::create(&values[..], &oracle_params);
+
+            println!("Rescue MerkleTreeConstruction of size {} took {}s", size, now.elapsed().as_secs());
 
             assert_eq!(tree.size(), size * values_per_leaf);
 
             let root = tree.get_commitment();
 
-            // let out index be 42
-
-            let leaf_elements = Vec::from_iter(values[42*4..43*4].iter().cloned());
-            let query : CosetCombinedQuery<Fr> = tree.produce_query(42*4..43*4, &values[..], &oracle_params);
+            let range = (index * values_per_leaf)..((index+1) * values_per_leaf);
+            let leaf_elements = Vec::from_iter(values[range.clone()].iter().cloned());
+            let query : CosetCombinedQuery<Fr> = tree.produce_query(range, &values[..], &oracle_params);
             let proof = query.raw_merkle_proof();
 
-            (42, root, leaf_elements, proof)
+            (index, root, leaf_elements, proof)
         };
 
         let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
-            size: 1024,
-            num_elems_per_leaf: 4,
+            size,
+            num_elems_per_leaf: values_per_leaf,
             sbox: BN256RescueSbox{},
             rescue_params: bn256_rescue_params,
 
             root_hash: root,
-            leaf_elems: elems,
+            leaf_elems: elems.clone(),
             index: index as u64,
-            merkle_proof: proof,
+            merkle_proof: proof.clone(),
         };
+
+        let now = Instant::now();
 
         let mut cs = TestConstraintSystem::<Bn256>::new();
         test_circuit.synthesize(&mut cs).expect("should synthesize");
+        println!("Circuit synthesation took {}ms", now.elapsed().as_millis());
    
         if !cs.is_satisfied()
         {
@@ -347,6 +360,47 @@ mod test {
         cs.modify_input(1, "allocate root/num", Fr::one());
         assert!(!cs.is_satisfied());
 
-        println!("Rescue tree for 4096 elements with 4 elements per leaf requires {} constraints", cs.num_constraints());
+        println!("Rescue tree for {} elements with {} elements per leaf requires {} constraints", 
+            size, values_per_leaf, cs.num_constraints());
+
+        let now = Instant::now();
+        let mut transpiler = Transpiler::<Bn256>::new();
+
+        let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
+            size,
+            num_elems_per_leaf: values_per_leaf,
+            sbox: BN256RescueSbox{},
+            rescue_params: BN256Rescue::default(),
+
+            root_hash: root,
+            leaf_elems: elems.clone(),
+            index: index as u64,
+            merkle_proof: proof.clone(),
+        };
+
+        test_circuit.synthesize(&mut transpiler).expect("sythesize into traspilation must succeed");
+
+        let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
+            size,
+            num_elems_per_leaf: values_per_leaf,
+            sbox: BN256RescueSbox{},
+            rescue_params: BN256Rescue::default(),
+
+            root_hash: root,
+            leaf_elems: elems,
+            index: index as u64,
+            merkle_proof: proof,
+        };
+
+        let hints = transpiler.hints;
+        let adapted_curcuit = AdaptorCircuit::new(test_circuit, &hints);
+
+        let mut assembly = TestAssembly::<Bn256>::new();
+        adapted_curcuit.synthesize(&mut assembly).expect("sythesize of transpiled into CS must succeed");
+
+        assert!(assembly.is_satisfied(false));
+        let num_gates = assembly.num_gates();
+        println!("Transpiled into {} gates", num_gates);
+        println!("Circuit transpilation took {}ms", now.elapsed().as_millis());
     }
 }

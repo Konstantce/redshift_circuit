@@ -55,8 +55,6 @@ fn combine_at_single_point<E: Engine, CS: ConstraintSystem<E>>(
     let mut temp : Num<E> = x.clone();
     temp -= x_1;
     let res = Num::div(cs.namespace(|| ""), &res, &temp)?;
-
-    println!("first sum : {}", res.get_value().unwrap());
     
     Ok((res, aggr_mult))
 }
@@ -162,9 +160,6 @@ pub fn upper_layer_combiner_impl<E: Engine, I: OracleGadget<E>, CS: ConstraintSy
     let (res1, alpha1) = combine_at_single_point(
         &mut cs, pairs, &evaluation_point, z.clone(), aggr_challenge.clone())?;
 
-    println!("aggregation challenge: {}", aggr_challenge.get_value().unwrap());
-    println!("ev_p: {}", evaluation_point.get_value().unwrap());
-    //println!("upper layer combiner result: {}", res1.get_value().unwrap());
 
     // combine witness polynomials z_1, z_2, c which are opened at z and z * omega
 
