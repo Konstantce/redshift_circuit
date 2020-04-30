@@ -62,7 +62,7 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, (FriParams, &[Label])> for Fri
         let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
         let top_level_height = log2_floor(top_level_oracle_size);
         
-        let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
+        let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one.get()) / fri_params.collapsing_factor as usize;
         // we do not count the very first and the last iterations
         num_of_iters -= 1;
         

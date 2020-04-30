@@ -205,7 +205,7 @@ mod test {
     use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
 
     use hashes::rescue::*;
-    use hashes::bn256_rescue_sbox::BN256RescueSbox;
+    use hashes::rescue::bn256_rescue_sbox::BN256RescueSbox;
 
     use std::iter::FromIterator;
     use super::*;
@@ -290,18 +290,19 @@ mod test {
 
         let bn256_rescue_params = BN256Rescue::default();
 
+        let size = 1024;
+        let values_per_leaf = 4;
+        let index = 42;
+
         let (index, root, elems, proof) = {
 
             let oracle_params = RescueTreeParams {
-                values_per_leaf: 4,
+                values_per_leaf,
                 rescue_params: &bn256_rescue_params,
                 _marker: std::marker::PhantomData::<Fr>,
             };
 
-            // we are going to create tree constaining 4096 elements, with 4 elements per leaf
-            // hence there are 1024 leaves
-
-            let values : Vec<Fr> = (0..4096).scan(Fr::multiplicative_generator(), |cur, _| {
+            let values : Vec<Fr> = (0..(size * values_per_leaf)).scan(Fr::multiplicative_generator(), |cur, _| {
                 let res = cur.clone();
                 cur.double();
                 Some(res)
@@ -309,7 +310,7 @@ mod test {
 
             let tree = FriSpecificRescueTree::create(&values[..], &oracle_params);
 
-            assert_eq!(tree.size(), 4096);
+            assert_eq!(tree.size(), size * values_per_leaf);
 
             let root = tree.get_commitment();
 
@@ -336,7 +337,11 @@ mod test {
 
         let mut cs = TestConstraintSystem::<Bn256>::new();
         test_circuit.synthesize(&mut cs).expect("should synthesize");
-
+   
+        if !cs.is_satisfied()
+        {
+            println!("UNSATISFIED at: {}", cs.which_is_unsatisfied().unwrap());
+        }
         assert!(cs.is_satisfied());
 
         cs.modify_input(1, "allocate root/num", Fr::one());

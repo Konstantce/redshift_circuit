@@ -17,7 +17,7 @@ mod test {
     use redshift_circuit::circuit::*;
     use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
     use bellman::Circuit;
-    use hashes::bn256_rescue_sbox::BN256RescueSbox;
+    use hashes::rescue::bn256_rescue_sbox::BN256RescueSbox;
     use channel::rescue_channel::RescueChannelGadget;
     
     #[test]
@@ -39,7 +39,7 @@ mod test {
             lde_factor: 16,
             R: 20,
             collapsing_factor: 2,
-            final_degree_plus_one: 1
+            final_degree_plus_one: std::cell::Cell::new(1),
         };
 
         let bn256_rescue_params = BN256Rescue::default();
@@ -70,7 +70,7 @@ mod test {
 
         assert_eq!(is_valid, true);
 
-        println!("REDSHIFT PROOF DONE XXX");
+        println!("REDSHIFT PROOF DONE");
 
         let mut container = Vec::<Fr>::new();
 

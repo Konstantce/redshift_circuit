@@ -16,7 +16,7 @@ use bellman::{
 
 
 use common::num::*;
-use super::rescue::RescueSbox;
+use super::RescueSbox;
 use bellman::redshift::IOP::hashes::rescue::{RescueParams};
 use bellman::redshift::IOP::hashes::rescue::bn256_rescue_params::BN256Rescue;
 use bellman::pairing::bn256::Bn256 as E;

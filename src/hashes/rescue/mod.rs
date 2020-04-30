@@ -18,9 +18,13 @@ use bellman::{
     Variable
 };
 
+use bellman::redshift::redshift::adaptor::*;
+use bellman::redshift::redshift::test_assembly::*;
+use bellman::redshift::redshift::cs::Circuit as PlonkCircuit;
 
 use common::num::*;
 
+pub mod bn256_rescue_sbox;
 
 pub trait RescueSbox<E: Engine>: Clone + Copy {
 
@@ -228,7 +232,7 @@ mod test {
     use bellman::pairing::bn256::Fr as Fr;
     use bellman::pairing::bn256::Bn256;
 
-    use super::super::bn256_rescue_sbox::BN256RescueSbox;
+    use super::bn256_rescue_sbox::BN256RescueSbox;
     use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
 
     #[test]
@@ -248,7 +252,6 @@ mod test {
 
                 let mut g = RescueGadget::<E, RP, SBOX>::new(&self.params);
 
-                assert!(self.inputs.len() <= self.params.r());
                 assert!(self.expected_outputs.len() <= self.params.c());
 
                 for elem in self.inputs.into_iter() {
@@ -271,48 +274,133 @@ mod test {
             }
         }
 
-        let bn256_rescue_params = BN256Rescue::default();
-        let mut r = Rescue::new(&bn256_rescue_params);
+        {
+            // test one iteration of Rescue hash
+            println!("RESCUE HASH SINGLE ITERAION");
 
-        // construct 3 and 9 as inputs
-        let mut a = Fr::one();
-        a.double();
-        a.add_assign(&Fr::one());
+            // construct 3 and 9 as inputs
+            let mut a = Fr::one();
+            a.double();
+            a.add_assign(&Fr::one());
 
-        let mut b = a.clone();
-        b.double();
+            let mut b = a.clone();
+            b.double();
 
-        let inputs = vec![a, b]; 
 
-        r.absorb(a, &bn256_rescue_params);
-        r.absorb(b, &bn256_rescue_params);
+            let inputs = vec![a, b]; 
 
-        let expected_s = r.squeeze(&bn256_rescue_params);
+            let bn256_rescue_params = BN256Rescue::default();
+            let mut r = Rescue::new(&bn256_rescue_params);
+            r.absorb(a, &bn256_rescue_params);
+            r.absorb(b, &bn256_rescue_params);
 
-        let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
-            params: bn256_rescue_params,
-            sbox: BN256RescueSbox{},
-            inputs: inputs,
-            expected_outputs: vec![expected_s],
-        };
+            let expected_s = r.squeeze(&bn256_rescue_params);
 
-        let mut cs = TestConstraintSystem::<Bn256>::new();
-        test_circuit.synthesize(&mut cs).expect("should synthesize");
+            let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
+                params: bn256_rescue_params,
+                sbox: BN256RescueSbox{},
+                inputs: inputs.clone(),
+                expected_outputs: vec![expected_s],
+            };
 
-        assert!(cs.is_satisfied());
+            let mut cs = TestConstraintSystem::<Bn256>::new();
+            test_circuit.synthesize(&mut cs).expect("should synthesize");
 
-        cs.modify_input(1, "rescue output/num", Fr::one());
-        assert!(!cs.is_satisfied());
+            if !cs.is_satisfied()
+            {
+                println!("UNSATISFIED at: {}", cs.which_is_unsatisfied().unwrap());
+            }
+            assert!(cs.is_satisfied());
 
-        println!("Rescue 2->1 with 22 rounds requires {} constraints", cs.num_constraints());
+            cs.modify_input(1, "rescue output/num", Fr::one());
+
+            assert!(!cs.is_satisfied());
+            println!("Rescue 2->1 with 22 rounds requires {} R1CS constraints", cs.num_constraints());
+
+            let mut transpiler = Transpiler::<Bn256>::new();
+
+            let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
+                params: BN256Rescue::default(),
+                sbox: BN256RescueSbox{},
+                inputs: inputs.clone(),
+                expected_outputs: vec![expected_s],
+            };
+
+            test_circuit.synthesize(&mut transpiler).expect("sythesize into traspilation must succeed");
+
+            let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
+                params: BN256Rescue::default(),
+                sbox: BN256RescueSbox{},
+                inputs: inputs.clone(),
+                expected_outputs: vec![expected_s],
+            };
+
+            let hints = transpiler.hints;
+            let adapted_curcuit = AdaptorCircuit::new(test_circuit, &hints);
+
+            let mut assembly = TestAssembly::<Bn256>::new();
+            adapted_curcuit.synthesize(&mut assembly).expect("sythesize of transpiled into CS must succeed");
+
+            assert!(assembly.is_satisfied(false));
+            let num_gates = assembly.num_gates();
+            println!("Transpiled into {} gates", num_gates);
+        }
+
+        {
+            // we run this second test for the following purpose: 
+            // in previous test we start with the empty state, absord a couple of elements and squeeze an element
+            // here wa want to analyze, how would the number of constraints change if we start with "constrainted" state
+            // for this we measure the number of constraints in double run of Resuce
+            // if there is no dependence between the "constaintification" of state and number of resulting constraints
+            // then the number of constraints should be simply doubled
+
+             // test one iteration of Rescue hash
+            println!("RESCUE HASH 2 ITERAIONS");
+
+            // construct 1, 3, 9, 81 as inputs
+            let a = Fr::one();
+
+            let mut b = a.clone();
+            b.double();
+            b.add_assign(&Fr::one());
+
+            let mut c = b.clone();
+            c.double();
+
+            let mut d = c.clone();
+            d.square();
+
+            let inputs = vec![a, b, c, d]; 
+
+            let bn256_rescue_params = BN256Rescue::default();
+            let mut r = Rescue::new(&bn256_rescue_params);
+            r.absorb(a, &bn256_rescue_params);
+            r.absorb(b, &bn256_rescue_params);
+            r.absorb(c, &bn256_rescue_params);
+            r.absorb(d, &bn256_rescue_params);
+
+            let expected_s = r.squeeze(&bn256_rescue_params);
+
+            let test_circuit = TestCircuit::<Bn256, BN256Rescue, BN256RescueSbox> {
+                params: bn256_rescue_params,
+                sbox: BN256RescueSbox{},
+                inputs: inputs,
+                expected_outputs: vec![expected_s],
+            };
+
+            let mut cs = TestConstraintSystem::<Bn256>::new();
+            test_circuit.synthesize(&mut cs).expect("should synthesize");
+
+            if !cs.is_satisfied()
+            {
+                println!("UNSATISFIED at: {}", cs.which_is_unsatisfied().unwrap());
+            }
+            assert!(cs.is_satisfied());
+
+            cs.modify_input(1, "rescue output/num", Fr::one());
+
+            assert!(!cs.is_satisfied());
+            println!("Rescue 2->1 with 22 rounds requires {} R1CS constraints", cs.num_constraints());
+        }
     }    
 }
-
-
-
-
-
-
-
-
-

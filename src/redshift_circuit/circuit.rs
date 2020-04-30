@@ -445,7 +445,7 @@ where
             initial_degree_plus_one : self.fri_params.initial_degree_plus_one.get(),
             lde_factor: self.fri_params.lde_factor,
             //the degree of the resulting polynomial at the bottom level of FRI
-            final_degree_plus_one : self.fri_params.final_degree_plus_one,
+            final_degree_plus_one : self.fri_params.final_degree_plus_one.get(),
             upper_layer_combiner,
 
             _engine_marker : std::marker::PhantomData::<E>,

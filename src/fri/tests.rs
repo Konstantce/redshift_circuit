@@ -15,7 +15,7 @@ mod test {
     use crate::tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
 
     use hashes::rescue::*;
-    use hashes::bn256_rescue_sbox::BN256RescueSbox;
+    use hashes::rescue::bn256_rescue_sbox::BN256RescueSbox;
 
     use bellman::redshift::IOP::FRI::coset_combining_fri::FriParams;
     use oracles::OracleGadget;
@@ -63,8 +63,9 @@ mod test {
             let coset_size = 1 << fri_params.collapsing_factor;
             let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
             let top_level_oracle_height = log2_floor(top_level_oracle_size);
+            let final_degree_plus_one = fri_params.final_degree_plus_one.get();
             
-            let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
+            let mut num_of_iters = log2_floor(fri_params.initial_degree_plus_one.get() / final_degree_plus_one) / fri_params.collapsing_factor as usize;
             // we do not count the very first and the last iterations
             num_of_iters -= 1;
             let label = "starting oracle";
@@ -86,7 +87,7 @@ mod test {
                 intermidiate_commitments.push(commitment);
             }
 
-            let final_coefficients = Vec::from_stream(cs.namespace(|| "final coefficients"), iter, fri_params.final_degree_plus_one)?;
+            let final_coefficients = Vec::from_stream(cs.namespace(|| "final coefficients"), iter, final_degree_plus_one)?;
             println!("num fri challenges read: {}", num_of_iters + 1);
             let fri_challenges = Vec::from_stream(cs.namespace(|| "fri challenges"), iter, num_of_iters + 1)?;
             
@@ -139,7 +140,7 @@ mod test {
                 num_query_rounds : self.fri_params.R,
                 initial_degree_plus_one : self.fri_params.initial_degree_plus_one.get(),
                 lde_factor: self.fri_params.lde_factor,
-                final_degree_plus_one : self.fri_params.final_degree_plus_one,
+                final_degree_plus_one : self.fri_params.final_degree_plus_one.get(),
                 upper_layer_combiner: self.combiner,
 
                 _engine_marker : std::marker::PhantomData::<E>,
@@ -215,7 +216,7 @@ mod test {
         use bellman::redshift::IOP::FRI::coset_combining_fri::precomputation::*;
         use bellman::redshift::redshift::serialization::ToStream;
 
-        use hashes::bn256_rescue_sbox::BN256RescueSbox;
+        use hashes::rescue::bn256_rescue_sbox::BN256RescueSbox;
         use tester::naming_oblivious_cs::NamingObliviousConstraintSystem as TestConstraintSystem;
 
         use rand::*;
@@ -243,8 +244,9 @@ mod test {
             R: natural_indexes.len(),
             initial_degree_plus_one: std::cell::Cell::new(SIZE),
             lde_factor: 4,
-            final_degree_plus_one: 4,
+            final_degree_plus_one: std::cell::Cell::new(4),
         };
+        fri_params.recompute_final_degree(true);
 
         let oracle_params = RescueTreeParams {
             values_per_leaf: 1 << fri_params.collapsing_factor,
@@ -323,7 +325,7 @@ mod test {
             c.to_stream(&mut container, ());
         }
 
-        proof.final_coefficients.to_stream(&mut container, fri_params.final_degree_plus_one);
+        proof.final_coefficients.to_stream(&mut container, fri_params.final_degree_plus_one.get());
         let num_challenges = fri_challenges.len();
         println!("num fri challenges: {}", num_challenges);
         fri_challenges.to_stream(&mut container, num_challenges);
@@ -340,7 +342,7 @@ mod test {
         let top_level_oracle_size = (fri_params.initial_degree_plus_one.get() * fri_params.lde_factor) / coset_size;
         let top_level_height = crate::common::log2_floor(top_level_oracle_size);
         
-        let mut num_of_iters = crate::common::log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one) / fri_params.collapsing_factor as usize;
+        let mut num_of_iters = crate::common::log2_floor(fri_params.initial_degree_plus_one.get() / fri_params.final_degree_plus_one.get()) / fri_params.collapsing_factor as usize;
         // we do not count the very first and the last iterations
         // TODO: investigate, why we have to substract only one (instead of 2)
         num_of_iters -= 1;
