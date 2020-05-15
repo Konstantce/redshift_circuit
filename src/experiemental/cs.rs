@@ -28,5 +28,8 @@ pub trait BinaryConstraintSystem {
 
     fn new_enforce_constant_gate(&self, variable: Variable, constant: Fr) -> Result<(), SynthesisError>;
     fn new_mul_gate(&self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError>;
-    fn new_power8_gate(&self, x: Variable, x2: Variable, x4: Variable, x8: Variable) -> Result<(), SynthesisError>; 
+    fn new_power8_gate(&self, x: Variable, x2: Variable, x4: Variable, x8: Variable) -> Result<(), SynthesisError>;
+    fn new_ternary_addition_gate(&self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError>;
+    fn new_linear_combination_gate(&self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>;
+    fn new_selector_gate(&self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError>;
 }

@@ -132,32 +132,39 @@ pub enum Index {
 }
 
 pub enum Gate {
+    
     EmptyGate,
-    ConstantGate((Variable, Fr)),
+
+    // x = c
+    ConstantGate(Variable, Fr),
+    
+    // out = a * b
     MulGate([Variable; 3]),
+    
+    // given element x, returns [x, x^2, x^4, x^8]
     Power8Gate([Variable; 4]),
+    
     // out = a + b + c
-    TernaryAdditionGate([Variable; 3]),
+    TernaryAdditionGate([Variable; 4]),
+    
     // out = c_1 * a + c_2 * b
-    LinearCombinationGate(),
-    // if flag = 1, 
+    LinearCombinationGate([Variable; 3], [Coeff; 2]),
+    
+    /// Takes two allocated numbers (a, b) and returns
+    /// a if the condition is true, and otherwise.
+    /// usually implemented using single constraint:
+    /// a * condition + b*(1-condition) = c ->
+    /// (a - b) * condition = c - b
+    /// the arr contains: [condition, a, b, c]
+    SelectorGate([Variable; 3])
 }
 
-/*
-  the gadgets below are Fp specific:
-  I * X = R
-  (1-R) * X = 0
-  if X = 0 then R = 0
-  if X != 0 then R = 1 and I = X^{-1}
-*/
+// We also need inversion in Field which is implemented using  the following PAIR of MUL gates:
+//  I * X = R
+//  (1-R) * X = 0 => X * R = X
+// if X = 0 then R = 0
+// if X != 0 then R = 1 and I = X^{-1}
 
- /// Takes two allocated numbers (a, b) and returns
-    /// a if the condition is true, and b
-    /// otherwise.
-    /// Most often to be used with b = 0
-    /// 
-    /// // a * condition + b*(1-condition) = c ->
-        // a * condition - b*condition = c - b
 
 impl Gate {
     pub(crate) fn new_empty_gate() -> Self {
@@ -165,7 +172,7 @@ impl Gate {
     }
 
     pub(crate) fn new_enforce_constant_gate(variable: Variable, constant: Fr) -> Self {
-        Self::ConstantGate((variable, constant))
+        Self::ConstantGate(variable, constant)
     }
 
     pub(crate) fn new_mul_gate(left: Variable, right: Variable, output: Variable) -> Self {
@@ -177,6 +184,14 @@ impl Gate {
     }
 
     pub(crate) fn new_ternary_addition_gate(a: Variable, b: Variable, c: Variable, out: Variable) -> Self {
-        Self::TernaryAdditionGate([x, x2, x4, x8])
+        Self::TernaryAdditionGate([a, b, c, out])
+    }
+
+    pub(crate) fn new_linear_combination_gate(a: Variable, b: Variable, out: Variable, c_1: Coeff, c_2: Coeff) -> Self {
+        Self::LinearCombinationGate([a, b, out], [c_1, c_2])
+    }
+
+    pub(crate) fn new_selector_gate(cond: Variable, a: Variable, b: Variable, out: Variable) -> Self {
+        Self::SelectorGate([cond, a, b, out])
     }
 }

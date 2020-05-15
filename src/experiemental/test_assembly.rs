@@ -82,7 +82,7 @@ impl BinaryConstraintSystem for TestAssembly {
         self.dummy_variable()
     }
 
-    fn new_enforce_constant_gate(&self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
 
         let gate = Gate::new_enforce_constant_gate(variable, constant);
         self.aux_gates.push(gate);
@@ -91,7 +91,7 @@ impl BinaryConstraintSystem for TestAssembly {
         Ok(())
     }
 
-    fn new_mul_gate(&self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
+    fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
 
         let gate = Gate::new_mul_gate(left, right, output);
         self.aux_gates.push(gate);
@@ -100,7 +100,7 @@ impl BinaryConstraintSystem for TestAssembly {
         Ok(())
     }
 
-    fn new_power8_gate(&self, x: Variable, x2: Variable, x4: Variable, x8: Variable) -> Result<(), SynthesisError> {
+    fn new_power8_gate(&mut self, x: Variable, x2: Variable, x4: Variable, x8: Variable) -> Result<(), SynthesisError> {
 
         let gate = Gate::new_power8_gate(x, x2, x4, x8);
         self.aux_gates.push(gate);
@@ -108,6 +108,42 @@ impl BinaryConstraintSystem for TestAssembly {
 
         Ok(())
     }    
+
+    fn new_ternary_addition_gate(&mut self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError> {
+
+        let gate = Gate::new_ternary_addition_gate(a, b, c, out);
+        self.aux_gates.push(gate);
+        self.n += 1;
+
+        Ok(())
+    }
+
+    fn new_linear_combination_gate(&mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError> 
+    {
+        let gate = Gate::new_linear_combination_gate(a, b, out, Coeff::Full(c_1), Coeff::Full(c_2));
+        self.aux_gates.push(gate);
+        self.n += 1;
+
+        Ok(())
+    }
+
+    fn new_selector_gate(&mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError> {
+
+        let gate = Gate::new_selector_gate(cond, a, b, out);
+        self.aux_gates.push(gate);
+        self.n += 1;
+
+        Ok(())
+    }
+
+    fn new_equality_gate(&mut self, left: Variable, right: Variable) -> Result<(), SynthesisError> {
+
+        let gate = Gate::new_equality_gate(left, right);
+        self.aux_gates.push(gate);
+        self.n += 1;
+
+        Ok(())
+    }
 }
 
 
@@ -155,161 +191,158 @@ impl TestAssembly {
         Variable(Index::Aux(0))
     }
 
-    pub fn is_satisfied(&self, in_a_middle: bool) -> bool {
+    pub fn is_satisfied(&self) -> bool {
         // expect a small number of inputs
         for (i, gate) in self.input_gates.iter().enumerate()
         {
-            let Gate::<E::Fr> {
-                variables: [a_var, b_var, c_var],
-                coefficients: [q_l, q_r, q_o, q_m, q_c, q_c_next]
-            } = *gate;
-
-            let q_l = q_l.unpack();
-            let q_r = q_r.unpack();
-            let q_o = q_o.unpack();
-            let q_m = q_m.unpack();
-            let q_c = q_c.unpack();
-            let q_c_next = q_c_next.unpack();
-
-            assert!(q_c.is_zero(), "should not hardcode a constant into the input gate");
-            assert!(q_c_next.is_zero(), "input gates should not link to the next gate");
-
-            let a_value = self.get_value(a_var).expect("must get a variable value");
-            let b_value = self.get_value(b_var).expect("must get a variable value");
-            let c_value = self.get_value(c_var).expect("must get a variable value");
-
-            let input_value = self.input_assingments[i];
-            let mut res = input_value;
-            res.negate();
-
-            let mut tmp = q_l;
-            tmp.mul_assign(&a_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_r;
-            tmp.mul_assign(&b_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_o;
-            tmp.mul_assign(&c_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_m;
-            tmp.mul_assign(&a_value);
-            tmp.mul_assign(&b_value);
-            res.add_assign(&tmp);
-
-            if !res.is_zero() {
-                println!("Unsatisfied at input gate {}: {:?}", i+1, gate);
-                println!("A value = {}, B value = {}, C value = {}", a_value, b_value, c_value);
-                return false;
+            match gate {
+                Gate::ConstantGate(variable, value) => {
+                    let expected_value = self.get_value(*variable).expect("must get a variable value");
+                    if expected_value != *value {
+                        println!("Unsatisfied at input gate nom. {}", i+1);
+                        println!("Input value = {}, Const value = {}", expected_value, *value);
+                        return false;
+                     }
+                },
+                _ => unreachable!(),
             }
         }
 
-        for (i, gate_pair) in self.aux_gates.windows(2).enumerate()
+        for (i, gate) in self.aux_gates.iter().enumerate()
         {
-            let this_gate = gate_pair[0];
-            let next_gate = &gate_pair[1];
+            match gate {
 
-            let Gate::<E::Fr> {
-                variables: [a_var, b_var, c_var],
-                coefficients: [q_l, q_r, q_o, q_m, q_c, q_c_next]
-            } = this_gate;
+                Gate::ConstantGate(variable, value) => {
+                    let expected_value = self.get_value(*variable).expect("must get a variable value");
+                    if expected_value != *value {
+                        println!("Unsatisfied at Constant gate nom. {}", i+1);
+                        println!("Input value = {}, Const value = {}", expected_value, *value);
+                        return false;
+                    }
+                },
 
-            let q_l = q_l.unpack();
-            let q_r = q_r.unpack();
-            let q_o = q_o.unpack();
-            let q_m = q_m.unpack();
-            let q_c = q_c.unpack();
-            let q_c_next = q_c_next.unpack();
+                Gate::MulGate(var_arr) => {
+                    let a_val = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let b_val = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let c_val = self.get_value(var_arr[2]).expect("must get a variable value");
+                    
+                    let mut temp = a_val.clone();
+                    temp.mul_assign(&b_val);
+                    if temp != c_val {
+                        println!("Unsatisfied at Mul gate nom. {}", i+1);
+                        println!("A = {}, B = {}, OUT = {}", a_val, b_val, c_val);
+                        return false;
+                    }
+                },
 
-            let a_value = self.get_value(a_var).expect("must get a variable value");
-            let b_value = self.get_value(b_var).expect("must get a variable value");
-            let c_value = self.get_value(c_var).expect("must get a variable value");
+                Gate::Power8Gate(var_arr) => {
+                    let x = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let x2 = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let x4 = self.get_value(var_arr[2]).expect("must get a variable value");
+                    let x8 = self.get_value(var_arr[3]).expect("must get a variable value");
+
+                    let mut temp = x.clone();
+                    for elem in [x2, x4, x8].iter() {
+                        temp.square();
+                        if temp != *elem {
+                            println!("Unsatisfied at Power8 gate nom. {}", i+1);
+                            println!("X = {}, X^2 = {}", temp, *elem);
+                            return false;
+                        }
+                    }
+                },
+
+                Gate::TernaryAdditionGate(var_arr) => {
+                    let a_val = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let b_val = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let c_val = self.get_value(var_arr[2]).expect("must get a variable value");
+                    let out = self.get_value(var_arr[3]).expect("must get a variable value");
+                    
+                    let mut temp = a_val.clone();
+                    temp.add_assign(&b_val);
+                    temp.add_assign(&c_val);
+
+                    if temp != out {
+                        println!("Unsatisfied at TernaryAdditionGate gate nom. {}", i+1);
+                        println!("A = {}, B = {}, C = {}, OUT = {}", a_val, b_val, c_val, out);
+                        return false;
+                    }
+                },
+    
+                Gate::LinearCombinationGate(var_arr, coeff_var) => {
+                    
+                    let a_val = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let b_val = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let out = self.get_value(var_arr[2]).expect("must get a variable value");
+
+                    let c0 = coeff_var[0].unpack();
+                    let c1 = coeff_var[0].unpack();
+
+                    let mut temp1 = a_val.clone();
+                    temp1.mul_assign(&c0);
+                    let mut temp2 = b_val.clone();
+                    temp2.mul_assign(&c1);
+                    temp1.add_assign(&temp2);
+
+                    if temp1 != out {
+                        println!("Unsatisfied at LinearCombination Gate gate nom. {}", i+1);
+                        println!("A = {}, B = {}, C1 = {}, C2 = {}, OUT = {}", a_val, b_val, c0, c1, out);
+                        return false;
+                    }  
+                },
+    
+                Gate::SelectorGate(var_arr) => {
+
+                    let cond = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let a = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let b = self.get_value(var_arr[2]).expect("must get a variable value");
+                    let out = self.get_value(var_arr[3]).expect("must get a variable value");
+
+                    let zero = Fr::zero();
+                    let one = Fr::one();
+
+                    if (cond != zero) && (cond != one) {
+                        println!("Condition is not boolean at Selector Gate gate nom. {}", i+1);
+                        println!("COND = {}", cond);
+                        return false;
+                    }
+
+                    let mut  flag = false;
+                    if cond == one {
+                        flag = true;
+                    }
+
+                    let expected = match flag {
+                        true => a,
+                        false => b,
+                    };
+
+                    if expected != out {
+                        println!("Unsatisfied at Selector Gate gate nom. {}", i+1);
+                        println!("COND = {}, A = {}, B = {}, OUT = {}", flag, a, b, out);
+                        return false;
+                    }
+                },
+
+                Gate::EqualityGate(var_arr) => {
+
+                    let a = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let b = self.get_value(var_arr[2]).expect("must get a variable value");
+
+                    if a != b {
+                        println!("Unsatisfied at Equality Gate gate nom. {}", i+1);
+                        println!("A = {}, B = {}", a, b);
+                        return false;
+                    }
+                },
+              
+                _ => {
+                    println!("Unknown type of Gate nom. {}", i+1);
+                    return false;
+                }
+            }
+        };
             
-            let next_gate_c_var = *next_gate.c_wire();
-            let c_next_value = self.get_value(next_gate_c_var).expect("must get a variable value");
-
-            let mut res = q_c;
-
-            let mut tmp = q_l;
-            tmp.mul_assign(&a_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_r;
-            tmp.mul_assign(&b_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_o;
-            tmp.mul_assign(&c_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_m;
-            tmp.mul_assign(&a_value);
-            tmp.mul_assign(&b_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_c_next;
-            tmp.mul_assign(&c_next_value);
-            res.add_assign(&tmp);
-
-            if !res.is_zero() {
-                println!("Unsatisfied at aux gate {}", i+1);
-                println!("Gate {:?}", this_gate);
-                println!("A = {}, B = {}, C = {}", a_value, b_value, c_value);
-                return false;
-            }
-        }
-
-        if !in_a_middle {
-            let i = self.aux_gates.len();
-            let last_gate = *self.aux_gates.last().unwrap();
-
-            let Gate::<E::Fr> {
-                variables: [a_var, b_var, c_var],
-                coefficients: [q_l, q_r, q_o, q_m, q_c, q_c_next]
-            } = last_gate;
-
-            let q_l = q_l.unpack();
-            let q_r = q_r.unpack();
-            let q_o = q_o.unpack();
-            let q_m = q_m.unpack();
-            let q_c = q_c.unpack();
-            let q_c_next = q_c_next.unpack();
-
-            let a_value = self.get_value(a_var).expect("must get a variable value");
-            let b_value = self.get_value(b_var).expect("must get a variable value");
-            let c_value = self.get_value(c_var).expect("must get a variable value");
-
-            assert!(q_c_next.is_zero(), "last gate should not be linked to the next one");
-
-            let mut res = q_c;
-
-            let mut tmp = q_l;
-            tmp.mul_assign(&a_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_r;
-            tmp.mul_assign(&b_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_o;
-            tmp.mul_assign(&c_value);
-            res.add_assign(&tmp);
-
-            let mut tmp = q_m;
-            tmp.mul_assign(&a_value);
-            tmp.mul_assign(&b_value);
-            res.add_assign(&tmp);
-
-            if !res.is_zero() {
-                println!("Unsatisfied at aux gate {}", i+1);
-                println!("Gate {:?}", last_gate);
-                println!("A = {}, B = {}, C = {}", a_value, b_value, c_value);
-                return false;
-            }
-        }
-
         true
     }
 
