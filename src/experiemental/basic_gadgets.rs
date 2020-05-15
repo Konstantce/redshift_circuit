@@ -152,23 +152,112 @@ impl AllocatedNum {
         cs.new_power8_gate(self.get_variable(), x2_var, x4_var, x8_var)?;
 
         Ok([AllocatedNum {
-                value: value,
-                variable: var
+                value: x2_value,
+                variable: x2_var
             },
 
             AllocatedNum {
-                value: value,
-                variable: var
+                value: x4_value,
+                variable: x4_var
             },
 
             AllocatedNum {
-                value: value,
-                variable: var
+                value: x8_value,
+                variable: x8_var
             },
         ])
     }
 
     pub fn ternary_add<CS>(
+        mut cs: CS,
+        a: &Self,
+        b: &Self,
+        c: &Self,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let mut value = None;
+
+        let var = cs.alloc(|| {
+            let mut tmp = *a.value.get()?;
+            tmp.add_assign(b.value.get()?);
+            tmp.add_assign(c.value.get()?);
+            value = Some(tmp);
+            Ok(tmp)
+        })?;
+
+        cs.new_ternary_addition_gate(a.get_variable(), b.get_variable(), c.get_variable(), var)?;
+
+        Ok(AllocatedNum {
+            value,
+            variable: var
+        })
+    }
+
+    pub fn linear_combination_gadget<CS>(
+        mut cs: CS,
+        a: &Self,
+        b: &Self,
+        c1: &Fr,
+        c2: &Fr,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let mut value = None;
+
+        let var = cs.alloc(|| {
+            let mut tmp1 = *a.value.get()?;
+            tmp1.mul_assign(c1);
+            let mut tmp2 = *b.value.get()?;
+            tmp2.mul_assign(c2);
+
+            tmp1.add_assign(&tmp2);
+            value = Some(tmp1);
+            Ok(tmp1)
+        })?;
+
+        cs.new_linear_combination_gate(a.get_variable(), b.get_variable(), var, c1.clone(), c2.clone())?;
+
+        Ok(AllocatedNum {
+            value,
+            variable: var
+        })
+    }
+
+    pub fn selector_gadget<CS>(
+        mut cs: CS,
+        cond: &Self,
+        a: &Self,
+        b: &Self,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let mut value = None;
+
+        let var = cs.alloc(|| {
+            cs.namespace(|| "conditional select result"),
+//             || {
+//                 if *condition.get_value().get()? {
+//                     Ok(*a.value.get()?)
+//                 } else {
+//                     Ok(*b.value.get()?)
+//                 }
+//             }
+
+            tmp1.add_assign(&tmp2);
+            value = Some(tmp1);
+            Ok(tmp1)
+        })?;
+
+        cs.new_selector_gate(cond.get_variable(), a.get_variable(), b.get_varible(), var)?;
+
+        Ok(AllocatedNum {
+            value,
+            variable: var
+        })
+    }
+
+    pub fn equals<CS>(
         &self,
         mut cs: CS,
         other: &Self
@@ -192,27 +281,13 @@ impl AllocatedNum {
         })
     }
 
-    
-    
-//     // out = c_1 * a + c_2 * b
-//     LinearCombinationGate([Variable; 3], [Coeff; 2]),
-    
-//     /// Takes two allocated numbers (a, b) and returns
-//     /// a if the condition is true, and otherwise.
-//     /// usually implemented using single constraint:
-//     /// a * condition + b*(1-condition) = c ->
-//     /// (a - b) * condition = c - b
-//     /// the arr contains: [condition, a, b, c]
-//     SelectorGate([Variable; 4]),
-
-//     /// asserts a = b 
-//     EqualityGate([Variable; 2]),
-
 //     // We also need inversion in Field which is implemented using  the following PAIR of MUL gates:
 // //  I * X = R
 // //  (1-R) * X = 0 => X * R = X
 // // if X = 0 then R = 0
 // // if X != 0 then R = 1 and I = X^{-1}
+
+// check subfield gadget
 
     
 //     /// Deconstructs this allocated number into its
