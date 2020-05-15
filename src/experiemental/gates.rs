@@ -156,7 +156,10 @@ pub enum Gate {
     /// a * condition + b*(1-condition) = c ->
     /// (a - b) * condition = c - b
     /// the arr contains: [condition, a, b, c]
-    SelectorGate([Variable; 3])
+    SelectorGate([Variable; 4]),
+
+    /// asserts a = b 
+    EqualityGate([Variable; 2]),
 }
 
 // We also need inversion in Field which is implemented using  the following PAIR of MUL gates:
@@ -193,5 +196,9 @@ impl Gate {
 
     pub(crate) fn new_selector_gate(cond: Variable, a: Variable, b: Variable, out: Variable) -> Self {
         Self::SelectorGate([cond, a, b, out])
+    }
+
+    pub(crate) fn new_equality_gate(left: Variable, right: Variable) -> Self {
+        Self::EqualityGate([left, right])
     }
 }

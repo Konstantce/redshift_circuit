@@ -326,8 +326,8 @@ impl TestAssembly {
 
                 Gate::EqualityGate(var_arr) => {
 
-                    let a = self.get_value(var_arr[1]).expect("must get a variable value");
-                    let b = self.get_value(var_arr[2]).expect("must get a variable value");
+                    let a = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let b = self.get_value(var_arr[1]).expect("must get a variable value");
 
                     if a != b {
                         println!("Unsatisfied at Equality Gate gate nom. {}", i+1);
