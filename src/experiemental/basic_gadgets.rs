@@ -27,7 +27,7 @@ impl Clone for AllocatedNum {
 impl AllocatedNum {
    
     pub fn alloc<CS, F>(
-        mut cs: CS,
+        cs: &mut CS,
         value: F,
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem, F: FnOnce() -> Result<Fr, SynthesisError>
@@ -66,8 +66,8 @@ impl AllocatedNum {
 
     // for testing purposes only
 
-    pub fn alloc_random<CS, F>(
-        mut cs: CS,
+    pub fn alloc_random<CS>(
+        cs: &mut CS,
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem
     {
@@ -92,7 +92,7 @@ impl AllocatedNum {
 
     pub fn mul<CS>(
         &self,
-        mut cs: CS,
+        cs: &mut CS,
         other: &Self
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem
@@ -116,7 +116,7 @@ impl AllocatedNum {
 
     pub fn square<CS>(
         &self,
-        mut cs: CS
+        cs: &mut CS
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem
     {
@@ -140,7 +140,7 @@ impl AllocatedNum {
     // given element x, returns [x^2, x^4]
     pub fn pow4<CS>(
         &self,
-        mut cs: CS
+        cs: &mut CS
     ) -> Result<[Self; 2], SynthesisError>
         where CS: ConstraintSystem
     {
@@ -176,7 +176,7 @@ impl AllocatedNum {
     }
 
     pub fn ternary_add<CS>(
-        mut cs: CS,
+        cs: &mut CS,
         a: &Self,
         b: &Self,
         c: &Self,
@@ -202,7 +202,7 @@ impl AllocatedNum {
     }
 
     pub fn linear_combination_gadget<CS>(
-        mut cs: CS,
+        cs: &mut CS,
         a: &Self,
         b: &Self,
         c1: &Fr,
@@ -232,7 +232,7 @@ impl AllocatedNum {
     }
 
     pub fn selector_gadget<CS>(
-        mut cs: CS,
+        cs: &mut CS,
         cond: &Self,
         a: &Self,
         b: &Self,
@@ -266,7 +266,7 @@ impl AllocatedNum {
 
     pub fn equals<CS>(
         &self,
-        mut cs: CS,
+        cs: &mut CS,
         other: &Self
     ) -> Result<(), SynthesisError>
         where CS: ConstraintSystem
@@ -285,7 +285,7 @@ impl AllocatedNum {
 
     pub fn extended_inv_gadget<CS>(
         &self,
-        mut cs: CS,
+        cs: &mut CS,
     ) -> Result<(Self, Self), SynthesisError>
         where CS: ConstraintSystem
     {
@@ -338,7 +338,7 @@ impl AllocatedNum {
     // we check that x^(2^8) = x
 
     pub fn check_subfield_gadget<CS>(
-        mut cs: CS,
+        cs: &mut CS,
         x: &Self,
         x8: &Self,
     ) -> Result<(), SynthesisError>
@@ -357,7 +357,7 @@ impl AllocatedNum {
     
     pub fn unpack_into_subfield_decomposition<CS>(
         &self,
-        mut cs: CS,
+        cs: &mut CS,
         // NB: s can be recalculated on the fly if really needed
         s: &Fr,
     ) -> Result<[Self; 16], SynthesisError>
@@ -468,7 +468,7 @@ impl AllocatedNum {
     /// pack them all in single x \in GF(2^128)
     
     pub fn pack<CS>(
-        mut cs: CS,
+        cs: &mut CS,
         elems: [&Self; 16],
         s: &Fr,
     ) -> Result<Self, SynthesisError>
