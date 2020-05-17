@@ -209,14 +209,21 @@ impl BinaryField256 {
     pub fn from_byte_repr(byte_repr: [u8; 32]) -> Self {
         let mut repr : [u32; 8] = [0; 8];
         for (input, output) in byte_repr.chunks(4).zip(repr.iter_mut()) {
+            let mut temp : [u8; 4] = [0; 4];
+            
+            // it's Rust, and is is far from being perfect
+            for (x, y) in input.iter().zip(temp.iter_mut()) {
+                *y = *x;
+            }
+
             *output = unsafe { 
-                std::mem::transmute::<&[u8], u32>(input) 
+                std::mem::transmute::<[u8; 4], u32>(temp) 
             }.to_le()
         }
         Self {repr}
     }
 
-    pub fn to_byte_repr(&self) -> [u8; 32] {
+    pub fn into_byte_repr(&self) -> [u8; 32] {
         let mut byte_repr : [u8; 32] = [0; 32];
         for (input, output) in self.repr.iter().zip(byte_repr.chunks_mut(4)) {
             let temp = unsafe { 

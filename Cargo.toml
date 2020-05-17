@@ -17,6 +17,7 @@ byteorder = "1"
 blake2_rfc =  {package = "blake2-rfc", version = "0.2.18"}
 rand = "0.4"
 num_bigint = {package = "num-bigint", version = "0.2.6"}
+arraymap = "0.1.1"
 
 aes = {version = "0.3.2"}
 lazy_static = "1"

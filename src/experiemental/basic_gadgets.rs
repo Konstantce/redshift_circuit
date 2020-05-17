@@ -5,8 +5,10 @@ use super::cs::*;
 use crate::bellman::SynthesisError;
 use crate::bellman::pairing::ff::Field;
 use crate::common::Assignment;
+use arraymap::ArrayMap;
+use rand::Rng;
 
-
+#[derive(Debug, Copy)]
 pub struct AllocatedNum {
     value: Option<Fr>,
     variable: Variable
@@ -44,7 +46,7 @@ impl AllocatedNum {
     }
 
     pub fn alloc_input<CS, F>(
-        mut cs: CS,
+        cs: &mut CS,
         value: F,
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem, F: FnOnce() -> Result<Fr, SynthesisError>
@@ -58,6 +60,24 @@ impl AllocatedNum {
 
         Ok(AllocatedNum {
             value: new_value,
+            variable: var
+        })
+    }
+
+    // for testing purposes only
+
+    pub fn alloc_random<CS, F>(
+        mut cs: CS,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let value : Fr = rand::thread_rng().gen();
+        let var = cs.alloc(|| {
+            Ok(value)
+        })?;
+
+        Ok(AllocatedNum {
+            value: Some(value),
             variable: var
         })
     }
@@ -285,7 +305,8 @@ impl AllocatedNum {
 
         let inv_elem_var = cs.alloc(|| {
             let val = *self.value.get()?;
-            let tmp = val.inverse().get()?;
+            let tmp = val.inverse();
+            let tmp = tmp.get()?;
 
             inv_elem_value = Some(*tmp);
             Ok(*tmp)
@@ -375,8 +396,7 @@ impl AllocatedNum {
         // y_6 = y_5 + s^13 * x_13 + s^14 * x_14
         // x = y_6 + s^15 * x_15
 
-        let mut aux_y_values : [Option<Fr>; 6] = [None; 6];
-        let mut aux_y : [Option<Variable>; 6] = [None; 6];
+        let mut aux_y : [Option<Variable>; 7] = [None; 7];
         let mut slice_length = 3;
 
         for idx in 0..7 {
@@ -386,54 +406,163 @@ impl AllocatedNum {
                     repr[i] = 0;
                 } 
                 let tmp =  Fr::from_byte_repr(repr);
-                
-                // TODO: change of basis should also occur here
-                aux_y_values[idx] = Some(tmp);
+ 
                 Ok(tmp)
             })?);
             slice_length += 2;
         }
 
-        let mut coef = Fr::one();
-        
-        for idx in 0..7 {
+        let mut coef = s.clone();
+        let mut next_coef = coef.clone();
+        next_coef.mul_assign(s);
+        let mut cur_alloc_num_idx = 0;
 
-        }
-
-        fn new_long_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>;
-
-        cs.new_mul_gate(inv_elem_var, self.get_variable(), flag_var)?;
-        cs.new_mul_gate(self.get_variable(), flag_var, self.get_variable())?;
-
-        
-
-        Ok(
-            (
-                AllocatedNum {
-                    value: flag_value,
-                    variable: flag_var
+        for idx in 0..8 {
+            
+            match idx {
+                0 => {
+                    cs.new_long_linear_combination_gate(
+                        allocated_nums[0].unwrap().get_variable(),
+                        allocated_nums[1].unwrap().get_variable(),
+                        allocated_nums[2].unwrap().get_variable(),
+                        aux_y[0].unwrap(),
+                        Fr::one(),
+                        coef,
+                        next_coef,
+                    )?;
+                    cur_alloc_num_idx += 3;
                 },
 
-                AllocatedNum {
-                    value: inv_elem_value,
-                    variable: inv_elem_var,
-                }
-            )
-        )
-    }
+                7 => cs.new_linear_combination_gate(
+                        aux_y[6].unwrap(),
+                        allocated_nums[15].unwrap().get_variable(),
+                        self.get_variable(),
+                        Fr::one(),
+                        coef,
+                    )?,
+                    
+                _ => {
+                    cs.new_long_linear_combination_gate(
+                        aux_y[idx-1].unwrap(),
+                        allocated_nums[cur_alloc_num_idx].unwrap().get_variable(),
+                        allocated_nums[cur_alloc_num_idx + 1].unwrap().get_variable(),
+                        aux_y[idx].unwrap(),
+                        Fr::one(),
+                        coef,
+                        next_coef,
+                    )?;
+                    cur_alloc_num_idx += 2;
+                }             
+            }
 
+            coef = next_coef.clone();
+            next_coef.mul_assign(s);
+        }
+
+        let unwrapped = allocated_nums.map(|x| x.unwrap());
+        Ok(unwrapped)
+    }
+        
     /// Inverse to the previosly defined operation:
     /// given separate elements x_i \in GF(2^8)
     /// pack them all in single x \in GF(2^128)
     
     pub fn pack<CS>(
         mut cs: CS,
-        elems: [&Self, 16],
-    ) -> Result<[Self; 16], SynthesisError>
+        elems: [&Self; 16],
+        s: &Fr,
+    ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem
     {
+        let mut value = None;
 
+        let var = cs.alloc(|| {
+
+            let mut running_sum = Fr::zero();
+            let mut coef = Fr::one();
+
+            for e in elems.iter() {
+                let mut tmp = *e.value.get()?;
+                tmp.mul_assign(&coef);
+
+                running_sum.add_assign(&tmp);
+                coef.mul_assign(&s);
+            }
+
+            value = Some(running_sum);
+            Ok(running_sum)
+        })?;
+
+        // TODO: we need to change basis first!
+        let repr = value.map(|e| e.into_byte_repr());
+
+        let mut aux_y : [Option<Variable>; 7] = [None; 7];
+        let mut slice_length = 3;
+
+        for idx in 0..7 {
+            aux_y[idx] = Some(cs.alloc(|| {
+                let mut repr = repr.get()?.clone();
+                for i in slice_length..16 {
+                    repr[i] = 0;
+                } 
+                let tmp =  Fr::from_byte_repr(repr);
+ 
+                Ok(tmp)
+            })?);
+            slice_length += 2;
+        }
+
+        let mut coef = s.clone();
+        let mut next_coef = coef.clone();
+        next_coef.mul_assign(s);
+        let mut cur_alloc_num_idx = 0;
+
+        for idx in 0..8 {
+            
+            match idx {
+                0 => {
+                    cs.new_long_linear_combination_gate(
+                        elems[0].get_variable(),
+                        elems[1].get_variable(),
+                        elems[2].get_variable(),
+                        aux_y[0].unwrap(),
+                        Fr::one(),
+                        coef,
+                        next_coef,
+                    )?;
+                    cur_alloc_num_idx += 3;
+                },
+
+                7 => cs.new_linear_combination_gate(
+                        aux_y[6].unwrap(),
+                        elems[15].get_variable(),
+                        var,
+                        Fr::one(),
+                        coef,
+                    )?,
+                    
+                _ => {
+                    cs.new_long_linear_combination_gate(
+                        aux_y[idx-1].unwrap(),
+                        elems[cur_alloc_num_idx].get_variable(),
+                        elems[cur_alloc_num_idx + 1].get_variable(),
+                        aux_y[idx].unwrap(),
+                        Fr::one(),
+                        coef,
+                        next_coef,
+                    )?;
+                    cur_alloc_num_idx += 2;
+                }             
+            }
+
+            coef = next_coef.clone();
+            next_coef.mul_assign(s);
+        }
+
+        Ok(AllocatedNum {
+            value,
+            variable: var
+        })
     } 
 }
         

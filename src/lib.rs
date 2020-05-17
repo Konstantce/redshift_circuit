@@ -8,6 +8,7 @@ extern crate blake2_rfc;
 extern crate rand;
 extern crate aes;
 extern crate num_bigint;
+extern crate arraymap;
 
 
 #[macro_use]
