@@ -117,16 +117,15 @@ impl AllocatedNum {
         })
     }
 
-    // given element x, returns [x^2, x^4, x^8]
-    pub fn pow8<CS>(
+    // given element x, returns [x^2, x^4]
+    pub fn pow4<CS>(
         &self,
         mut cs: CS
-    ) -> Result<[Self; 3], SynthesisError>
+    ) -> Result<[Self; 2], SynthesisError>
         where CS: ConstraintSystem
     {
         let mut x2_value = None;
         let mut x4_value = None;
-        let mut x8_value = None;
 
         let x2_var = cs.alloc(|| {
             let mut tmp = *self.value.get()?;
@@ -142,14 +141,7 @@ impl AllocatedNum {
             Ok(tmp)
         })?;
 
-        let x8_var = cs.alloc(|| {
-            let mut tmp = *x4_value.get()?;
-            tmp.square();
-            x8_value = Some(tmp);
-            Ok(tmp)
-        })?;
-
-        cs.new_power8_gate(self.get_variable(), x2_var, x4_var, x8_var)?;
+        cs.new_power4_gate(self.get_variable(), x2_var, x4_var)?;
 
         Ok([AllocatedNum {
                 value: x2_value,
@@ -159,11 +151,6 @@ impl AllocatedNum {
             AllocatedNum {
                 value: x4_value,
                 variable: x4_var
-            },
-
-            AllocatedNum {
-                value: x8_value,
-                variable: x8_var
             },
         ])
     }
@@ -235,21 +222,21 @@ impl AllocatedNum {
         let mut value = None;
 
         let var = cs.alloc(|| {
-            cs.namespace(|| "conditional select result"),
-//             || {
-//                 if *condition.get_value().get()? {
-//                     Ok(*a.value.get()?)
-//                 } else {
-//                     Ok(*b.value.get()?)
-//                 }
-//             }
+            let cond_value = *cond.value.get()?;
+            let a_value = *a.value.get()?;
+            let b_value = *b.value.get()?;
 
-            tmp1.add_assign(&tmp2);
-            value = Some(tmp1);
-            Ok(tmp1)
+            let tmp = match (cond_value == Fr::one(), cond_value == Fr::zero()) {
+                (true, false) => a_value.clone(),
+                (false, true) => b_value.clone(),
+                (_, _) => unreachable!(),
+            };
+
+            value = Some(tmp);
+            Ok(tmp)
         })?;
 
-        cs.new_selector_gate(cond.get_variable(), a.get_variable(), b.get_varible(), var)?;
+        cs.new_selector_gate(cond.get_variable(), a.get_variable(), b.get_variable(), var)?;
 
         Ok(AllocatedNum {
             value,
@@ -261,357 +248,193 @@ impl AllocatedNum {
         &self,
         mut cs: CS,
         other: &Self
-    ) -> Result<Self, SynthesisError>
+    ) -> Result<(), SynthesisError>
         where CS: ConstraintSystem
     {
-        let mut value = None;
+        
+        cs.new_equality_gate(self.get_variable(), other.get_variable())?;
+        Ok(())
+    }
 
-        let var = cs.alloc(|| {
-            let mut tmp = *self.value.get()?;
-            tmp.mul_assign(other.value.get()?);
-            value = Some(tmp);
+    // We also need inversion in Field which is implemented using  the following PAIR of MUL gates:
+    // I * X = R
+    // (1-R) * X = 0 => X * R = X
+    // if X = 0 then R = 0
+    // if X != 0 then R = 1 and I = X^{-1}
+    // this gadget returns a pair R, I (I has no prescribed value if X = 0)
+
+    pub fn extended_inv_gadget<CS>(
+        &self,
+        mut cs: CS,
+    ) -> Result<(Self, Self), SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let mut flag_value = None;
+        let mut inv_elem_value = None;
+
+        let flag_var = cs.alloc(|| {
+            let val = *self.value.get()?;
+            let tmp = match val == Fr::zero() {
+                true => Fr::zero(),
+                false => Fr::one(),
+            };
+
+            flag_value = Some(tmp);
             Ok(tmp)
         })?;
 
-        cs.new_mul_gate(self.get_variable(), other.get_variable(), var)?;
+        let inv_elem_var = cs.alloc(|| {
+            let val = *self.value.get()?;
+            let tmp = val.inverse().get()?;
 
-        Ok(AllocatedNum {
-            value,
-            variable: var
-        })
+            inv_elem_value = Some(*tmp);
+            Ok(*tmp)
+        })?;
+
+        // I * X = R
+        // X * R = X
+        cs.new_mul_gate(inv_elem_var, self.get_variable(), flag_var)?;
+        cs.new_mul_gate(self.get_variable(), flag_var, self.get_variable())?;
+
+        Ok(
+            (
+                AllocatedNum {
+                    value: flag_value,
+                    variable: flag_var
+                },
+
+                AllocatedNum {
+                    value: inv_elem_value,
+                    variable: inv_elem_var,
+                }
+            )
+        )
     }
 
-//     // We also need inversion in Field which is implemented using  the following PAIR of MUL gates:
-// //  I * X = R
-// //  (1-R) * X = 0 => X * R = X
-// // if X = 0 then R = 0
-// // if X != 0 then R = 1 and I = X^{-1}
+    // check subfield gadget: 
+    // we check that this particluar element lies in GF(2^8) instead of the full field GF(2^128)
+    // this is achieved with the help of Fermat's little theorem: 
+    // we check that x^(2^8) = x
 
-// check subfield gadget
-
+    pub fn check_subfield_gadget<CS>(
+        mut cs: CS,
+        x: &Self,
+        x8: &Self,
+    ) -> Result<(), SynthesisError>
+        where CS: ConstraintSystem
+    {
+        cs.new_equality_gate(x.get_variable(), x8.get_variable())?;
+        Ok(())
+    }
+   
+    /// Deconstructs this allocated number x \in GF(2^128) into its
+    /// GF(2^8) representation i.e
+    /// x = x_0 * s + x_1 * s^2 + ... + x_(n-1) * s^(n-1)
+    /// where all x_i \in GF(2^8) and s is fixed element of GF(2^128)
+    /// NB: we do not check here that each x_i belongs to GH(2^128), 
+    /// it should be done explicitely with the help of check_subfield_gadget
     
-//     /// Deconstructs this allocated number into its
-//     /// boolean representation in little-endian bit
-//     /// order, requiring that the representation
-//     /// strictly exists "in the field" (i.e., a
-//     /// congruency is not allowed.)
-//     pub fn into_bits_le_strict<CS>(
-//         &self,
-//         mut cs: CS
-//     ) -> Result<Vec<Boolean>, SynthesisError>
-//         where CS: ConstraintSystem<E>
-//     {
-//         pub fn kary_and<E, CS>(
-//             mut cs: CS,
-//             v: &[AllocatedBit]
-//         ) -> Result<AllocatedBit, SynthesisError>
-//             where E: Engine,
-//                   CS: ConstraintSystem<E>
-//         {
-//             assert!(v.len() > 0);
-
-//             // Let's keep this simple for now and just AND them all
-//             // manually
-//             let mut cur = None;
-
-//             for (i, v) in v.iter().enumerate() {
-//                 if cur.is_none() {
-//                     cur = Some(v.clone());
-//                 } else {
-//                     cur = Some(AllocatedBit::and(
-//                         cs.namespace(|| format!("and {}", i)),
-//                         cur.as_ref().unwrap(),
-//                         v
-//                     )?);
-//                 }
-//             }
-
-//             Ok(cur.expect("v.len() > 0"))
-//         }
-
-//         // We want to ensure that the bit representation of a is
-//         // less than or equal to r - 1.
-//         let mut a = self.value.map(|e| BitIterator::new(e.into_repr()));
-//         let mut b = E::Fr::char();
-//         b.sub_noborrow(&1.into());
-
-//         let mut result = vec![];
-
-//         // Runs of ones in r
-//         let mut last_run = None;
-//         let mut current_run = vec![];
-
-//         let mut found_one = false;
-//         let mut i = 0;
-//         for b in BitIterator::new(b) {
-//             let a_bit = a.as_mut().map(|e| e.next().unwrap());
-
-//             // Skip over unset bits at the beginning
-//             found_one |= b;
-//             if !found_one {
-//                 // a_bit should also be false
-//                 a_bit.map(|e| assert!(!e));
-//                 continue;
-//             }
-
-//             if b {
-//                 // This is part of a run of ones. Let's just
-//                 // allocate the boolean with the expected value.
-//                 let a_bit = AllocatedBit::alloc(
-//                     cs.namespace(|| format!("bit {}", i)),
-//                     a_bit
-//                 )?;
-//                 // ... and add it to the current run of ones.
-//                 current_run.push(a_bit.clone());
-//                 result.push(a_bit);
-//             } else {
-//                 if current_run.len() > 0 {
-//                     // This is the start of a run of zeros, but we need
-//                     // to k-ary AND against `last_run` first.
-
-//                     if last_run.is_some() {
-//                         current_run.push(last_run.clone().unwrap());
-//                     }
-//                     last_run = Some(kary_and(
-//                         cs.namespace(|| format!("run ending at {}", i)),
-//                         &current_run
-//                     )?);
-//                     current_run.truncate(0);
-//                 }
-
-//                 // If `last_run` is true, `a` must be false, or it would
-//                 // not be in the field.
-//                 //
-//                 // If `last_run` is false, `a` can be true or false.
-
-//                 let a_bit = AllocatedBit::alloc_conditionally(
-//                     cs.namespace(|| format!("bit {}", i)),
-//                     a_bit,
-//                     &last_run.as_ref().expect("char always starts with a one")
-//                 )?;
-//                 result.push(a_bit);
-//             }
-
-//             i += 1;
-//         }
-
-//         // char is prime, so we'll always end on
-//         // a run of zeros.
-//         assert_eq!(current_run.len(), 0);
-
-//         // Now, we have `result` in big-endian order.
-//         // However, now we have to unpack self!
-
-//         let mut lc = LinearCombination::zero();
-//         let mut coeff = E::Fr::one();
-
-//         for bit in result.iter().rev() {
-//             lc = lc + (coeff, bit.get_variable());
-
-//             coeff.double();
-//         }
-
-//         lc = lc - self.variable;
-
-//         cs.enforce(
-//             || "unpacking constraint",
-//             |lc| lc,
-//             |lc| lc,
-//             |_| lc
-//         );
-
-//         // Convert into booleans, and reverse for little-endian bit order
-//         Ok(result.into_iter().map(|b| Boolean::from(b)).rev().collect())
-//     }
-
-//     /// Convert the allocated number into its little-endian representation.
-//     /// Note that this does not strongly enforce that the commitment is
-//     /// "in the field."
-//     pub fn into_bits_le<CS>(
-//         &self,
-//         mut cs: CS
-//     ) -> Result<Vec<Boolean>, SynthesisError>
-//         where CS: ConstraintSystem<E>
-//     {
-//         let bits = boolean::field_into_allocated_bits_le(
-//             &mut cs,
-//             self.value
-//         )?;
-
-//         let mut lc = LinearCombination::zero();
-//         let mut coeff = E::Fr::one();
-
-//         for bit in bits.iter() {
-//             lc = lc + (coeff, bit.get_variable());
-
-//             coeff.double();
-//         }
-
-//         lc = lc - self.variable;
-
-//         cs.enforce(
-//             || "unpacking constraint",
-//             |lc| lc,
-//             |lc| lc,
-//             |_| lc
-//         );
-
-//         Ok(bits.into_iter().map(|b| Boolean::from(b)).collect())
-//     }
-
-    
-
-//     /// Takes two allocated numbers (a, b) and returns
-//     /// a if the condition is true, and b
-//     /// otherwise.
-//     /// Most often to be used with b = 0
-//     pub fn conditionally_select<CS>(
-//         mut cs: CS,
-//         a: &Self,
-//         b: &Self,
-//         condition: &Boolean
-//     ) -> Result<(Self), SynthesisError>
-//         where CS: ConstraintSystem<E>
-//     {
-//         let c = Self::alloc(
-//             cs.namespace(|| "conditional select result"),
-//             || {
-//                 if *condition.get_value().get()? {
-//                     Ok(*a.value.get()?)
-//                 } else {
-//                     Ok(*b.value.get()?)
-//                 }
-//             }
-//         )?;
-
-//         // a * condition + b*(1-condition) = c ->
-//         // a * condition - b*condition = c - b
-
-//         cs.enforce(
-//             || "conditional select constraint",
-//             |lc| lc + a.variable - b.variable,
-//             |_| condition.lc(CS::one(), E::Fr::one()),
-//             |lc| lc + c.variable - b.variable
-//         );
-
-//         Ok(c)
-//     }
-
-//     /// Takes two allocated numbers (a, b) and returns
-//     /// allocated boolean variable with value `true`
-//     /// if the `a` and `b` are equal, `false` otherwise.
-//     pub fn equals<CS>(
-//         mut cs: CS,
-//         a: &Self,
-//         b: &Self
-//     ) -> Result<boolean::Boolean, SynthesisError>
-//         where E: Engine,
-//             CS: ConstraintSystem<E>
-//     {
-//         // Allocate and constrain `r`: result boolean bit. 
-//         // It equals `true` if `a` equals `b`, `false` otherwise
-
-//         let r_value = match (a.get_value(), b.get_value()) {
-//             (Some(a), Some(b))  => Some(a == b),
-//             _                   => None,
-//         };
-
-//         let r = boolean::AllocatedBit::alloc(
-//             cs.namespace(|| "r"), 
-//             r_value
-//         )?;
-
-//         let delta = Self::alloc(
-//             cs.namespace(|| "delta"), 
-//             || {
-//                 let a_value = *a.get_value().get()?;
-//                 let b_value = *b.get_value().get()?;
-
-//                 let mut delta = a_value;
-//                 delta.sub_assign(&b_value);
-
-//                 Ok(delta)
-//             }
-//         )?;
-
-//         // 
-//         cs.enforce(
-//             || "delta = (a - b)",
-//             |lc| lc + a.get_variable() - b.get_variable(),
-//             |lc| lc + CS::one(),
-//             |lc| lc + delta.get_variable(),
-//         );
-
-//         let delta_inv = Self::alloc(
-//             cs.namespace(|| "delta_inv"), 
-//             || {
-//                 let delta = *delta.get_value().get()?;
-
-//                 if delta.is_zero() {
-//                     Ok(E::Fr::one()) // we can return any number here, it doesn't matter
-//                 } else {
-//                     Ok(delta.inverse().unwrap())
-//                 }
-//             }
-//         )?;
-
-//         // Allocate `t = delta * delta_inv`
-//         // If `delta` is non-zero (a != b), `t` will equal 1
-//         // If `delta` is zero (a == b), `t` cannot equal 1
-
-//         let t = Self::alloc(
-//             cs.namespace(|| "t"),
-//             || {
-//                 let mut tmp = *delta.get_value().get()?;
-//                 tmp.mul_assign(&(*delta_inv.get_value().get()?));
-
-//                 Ok(tmp)
-//             }
+    pub fn unpack_into_subfield_decomposition<CS>(
+        &self,
+        mut cs: CS,
+        // NB: s can be recalculated on the fly if really needed
+        s: &Fr,
+    ) -> Result<[Self; 16], SynthesisError>
+        where CS: ConstraintSystem
+    {
+        // TODO: we need to change basis first!
+        let repr = self.value.map(|e| e.into_byte_repr());
+        let mut values : [Option<Fr>; 16] = [None; 16];
+        let mut allocated_nums: [Option<AllocatedNum>; 16] = [None; 16];
         
-//         )?;
+        for (idx, (alloc_num, value)) in allocated_nums.iter_mut().zip(values.iter_mut()).enumerate() {
+            let var = cs.alloc(|| {
+                let repr = repr.get()?;
+                let byte = repr[idx]; 
+                let tmp =  Fr::from_repr([byte as u32, 0, 0, 0, 0, 0, 0, 0]);
+                
+                // and here we need to return back to initial basis!
+                *value = Some(tmp);
+                Ok(tmp)
+            })?;
+            *alloc_num = Some(AllocatedNum {
+                variable: var,
+                value: *value,
+            });
+        }
 
-//         // Constrain allocation: 
-//         // t = (a - b) * delta_inv
-//         cs.enforce(
-//             || "t = (a - b) * delta_inv",
-//             |lc| lc + a.get_variable() - b.get_variable(),
-//             |lc| lc + delta_inv.get_variable(),
-//             |lc| lc + t.get_variable(),
-//         );
+        // we do also need several auxiliary variables as we using LongLinearCombinationGates 
+        // that can sum up to only 3 elements 
+        // NB: think how it can be reorganized with "looking forward" custom selector
+        // y_0 = x_0 +  s * x_1 + s^2 * x_2
+        // y_1 = y_0 + s^3 * x_3 + s^4 * x_4
+        // y_2 = y_1 + s^5 * x_5 + s^6 * x_6
+        // y_3 = y_2 + s^7 * x_7 + s^8 * x_8
+        // y_4 = y_3 + s^9 * x_9 + s^10 * x_10
+        // y_5 = y_4 + s^11 * x_11 + s^12 * x_12
+        // y_6 = y_5 + s^13 * x_13 + s^14 * x_14
+        // x = y_6 + s^15 * x_15
 
-//         // Constrain: 
-//         // (a - b) * (t - 1) == 0
-//         // This enforces that correct `delta_inv` was provided, 
-//         // and thus `t` is 1 if `(a - b)` is non zero (a != b )
-//         cs.enforce(
-//             || "(a - b) * (t - 1) == 0",
-//             |lc| lc + a.get_variable() - b.get_variable(),
-//             |lc| lc + t.get_variable() - CS::one(),
-//             |lc| lc
-//         );
+        let mut aux_y_values : [Option<Fr>; 6] = [None; 6];
+        let mut aux_y : [Option<Variable>; 6] = [None; 6];
+        let mut slice_length = 3;
 
-//         // Constrain: 
-//         // (a - b) * r == 0
-//         // This enforces that `r` is zero if `(a - b)` is non-zero (a != b)
-//         cs.enforce(
-//             || "(a - b) * r == 0",
-//             |lc| lc + a.get_variable() - b.get_variable(),
-//             |lc| lc + r.get_variable(),
-//             |lc| lc
-//         );
+        for idx in 0..7 {
+            aux_y[idx] = Some(cs.alloc(|| {
+                let mut repr = repr.get()?.clone();
+                for i in slice_length..16 {
+                    repr[i] = 0;
+                } 
+                let tmp =  Fr::from_byte_repr(repr);
+                
+                // TODO: change of basis should also occur here
+                aux_y_values[idx] = Some(tmp);
+                Ok(tmp)
+            })?);
+            slice_length += 2;
+        }
 
-//         // Constrain: 
-//         // (t - 1) * (r - 1) == 0
-//         // This enforces that `r` is one if `t` is not one (a == b)
-//         cs.enforce(
-//             || "(t - 1) * (r - 1) == 0",
-//             |lc| lc + t.get_variable() - CS::one(),
-//             |lc| lc + r.get_variable() - CS::one(),
-//             |lc| lc
-//         );
+        let mut coef = Fr::one();
+        
+        for idx in 0..7 {
 
-//         Ok(boolean::Boolean::from(r))
-//     }
+        }
 
+        fn new_long_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>;
+
+        cs.new_mul_gate(inv_elem_var, self.get_variable(), flag_var)?;
+        cs.new_mul_gate(self.get_variable(), flag_var, self.get_variable())?;
+
+        
+
+        Ok(
+            (
+                AllocatedNum {
+                    value: flag_value,
+                    variable: flag_var
+                },
+
+                AllocatedNum {
+                    value: inv_elem_value,
+                    variable: inv_elem_var,
+                }
+            )
+        )
+    }
+
+    /// Inverse to the previosly defined operation:
+    /// given separate elements x_i \in GF(2^8)
+    /// pack them all in single x \in GF(2^128)
     
-// }
+    pub fn pack<CS>(
+        mut cs: CS,
+        elems: [&Self, 16],
+    ) -> Result<[Self; 16], SynthesisError>
+        where CS: ConstraintSystem
+    {
+
+    } 
+}
+        
+

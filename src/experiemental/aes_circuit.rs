@@ -1,30 +1,17 @@
 // here is the implementation of AES circuit based partially on STARK paper
 
-use bellman::redshift::IOP::hashes::rescue::{RescueParams};
+use super::basic_gadgets::*;
+use super::binary_field::BinaryField256 as Fr;
+use super::cs::*;
 
-use bellman::pairing::{
-    Engine,
-};
+use crate::bellman::SynthesisError;
+use crate::bellman::pairing::ff::Field;
 
-use bellman::pairing::ff::{
-    Field,
-    PrimeField,
-};
 
-use bellman::{
-    SynthesisError,
-    ConstraintSystem,
-    LinearCombination,
-    Variable
-};
+pub struct RindjaelGadget {
+    pub NB, SB, NumRounds,
+}
 
-use common::num::*;
-
-pub mod bn256_rescue_sbox;
-
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-pub(crate) static RESCUE_PERMUTATIONS_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub trait RescueSbox<E: Engine>: Clone + Copy {
 

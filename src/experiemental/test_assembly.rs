@@ -100,17 +100,18 @@ impl BinaryConstraintSystem for TestAssembly {
         Ok(())
     }
 
-    fn new_power8_gate(&mut self, x: Variable, x2: Variable, x4: Variable, x8: Variable) -> Result<(), SynthesisError> {
+    fn new_power4_gate(&mut self, x: Variable, x2: Variable, x4: Variable) -> Result<(), SynthesisError> {
 
-        let gate = Gate::new_power8_gate(x, x2, x4, x8);
+        let gate = Gate::new_power4_gate(x, x2, x4);
         self.aux_gates.push(gate);
         self.n += 1;
 
         Ok(())
     }    
 
-    fn new_ternary_addition_gate(&mut self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError> {
-
+    fn new_ternary_addition_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError> 
+    {
         let gate = Gate::new_ternary_addition_gate(a, b, c, out);
         self.aux_gates.push(gate);
         self.n += 1;
@@ -118,7 +119,8 @@ impl BinaryConstraintSystem for TestAssembly {
         Ok(())
     }
 
-    fn new_linear_combination_gate(&mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError> 
+    fn new_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError> 
     {
         let gate = Gate::new_linear_combination_gate(a, b, out, Coeff::Full(c_1), Coeff::Full(c_2));
         self.aux_gates.push(gate);
@@ -127,7 +129,18 @@ impl BinaryConstraintSystem for TestAssembly {
         Ok(())
     }
 
-    fn new_selector_gate(&mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError> {
+    fn new_long_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError> 
+    {
+        let gate = Gate::new_long_linear_combination_gate(a, b, c, out, Coeff::Full(c_1), Coeff::Full(c_2), Coeff::Full(c_3));
+        self.aux_gates.push(gate);
+        self.n += 1;
+
+        Ok(())
+    }
+
+    fn new_selector_gate(
+        &mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError> {
 
         let gate = Gate::new_selector_gate(cond, a, b, out);
         self.aux_gates.push(gate);
@@ -235,14 +248,13 @@ impl TestAssembly {
                     }
                 },
 
-                Gate::Power8Gate(var_arr) => {
+                Gate::Power4Gate(var_arr) => {
                     let x = self.get_value(var_arr[0]).expect("must get a variable value");
                     let x2 = self.get_value(var_arr[1]).expect("must get a variable value");
                     let x4 = self.get_value(var_arr[2]).expect("must get a variable value");
-                    let x8 = self.get_value(var_arr[3]).expect("must get a variable value");
 
                     let mut temp = x.clone();
-                    for elem in [x2, x4, x8].iter() {
+                    for elem in [x2, x4].iter() {
                         temp.square();
                         if temp != *elem {
                             println!("Unsatisfied at Power8 gate nom. {}", i+1);
@@ -287,6 +299,34 @@ impl TestAssembly {
                     if temp1 != out {
                         println!("Unsatisfied at LinearCombination Gate gate nom. {}", i+1);
                         println!("A = {}, B = {}, C1 = {}, C2 = {}, OUT = {}", a_val, b_val, c0, c1, out);
+                        return false;
+                    }  
+                },
+
+                Gate::LongLinearCombinationGate(var_arr, coeff_var) => {
+                    
+                    let a_val = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let b_val = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let c_val = self.get_value(var_arr[2]).expect("must get a variable value");
+                    let out = self.get_value(var_arr[3]).expect("must get a variable value");
+
+                    let c0 = coeff_var[0].unpack();
+                    let c1 = coeff_var[0].unpack();
+                    let c2 = coeff_var[0].unpack();
+
+                    let mut temp1 = a_val.clone();
+                    temp1.mul_assign(&c0);
+                    let mut temp2 = b_val.clone();
+                    temp2.mul_assign(&c1);
+                    temp1.add_assign(&temp2);
+                    temp2 = c_val.clone();
+                    temp2.mul_assign(&c2);
+                    temp1.add_assign(&temp2);
+
+                    if temp1 != out {
+                        println!("Unsatisfied at LongLinearCombination Gate gate nom. {}", i+1);
+                        println!("X = {}, Y = {}, Z = {}, C1 = {}, C2 = {}, C3 = {}, OUT = {}", 
+                            a_val, b_val, c_val, c0, c1, c2, out);
                         return false;
                     }  
                 },

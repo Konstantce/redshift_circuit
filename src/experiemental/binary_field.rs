@@ -5,6 +5,7 @@ use crate::bellman::pairing::ff::Field;
 
 use std::error::Error;
 use std::fmt;
+use std::mem;
 use std::io::{self, Read, Write};
 
 extern crate byteorder;
@@ -145,16 +146,16 @@ impl ::std::fmt::Display for BinaryField256 {
 
 impl BinaryField256 {
 
-    fn num_bits(&self) -> u32 {
+    pub fn num_bits(&self) -> u32 {
         256
     }
 
-    fn capacity(&self) -> u32 {
+    pub fn capacity(&self) -> u32 {
         256
     }
 
     /// Writes this `PrimeFieldRepr` as a big endian integer.
-    fn write_be<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write_be<W: Write>(&self, mut writer: W) -> io::Result<()> {
         use byteorder::{BigEndian, WriteBytesExt};
 
         for digit in self.repr.as_ref().iter().rev() {
@@ -165,7 +166,7 @@ impl BinaryField256 {
     }
 
     /// Reads a big endian integer into this representation.
-    fn read_be<R: Read>(&mut self, mut reader: R) -> io::Result<()> {
+    pub fn read_be<R: Read>(&mut self, mut reader: R) -> io::Result<()> {
         use byteorder::{BigEndian, ReadBytesExt};
 
         for digit in self.repr.as_mut().iter_mut().rev() {
@@ -176,7 +177,7 @@ impl BinaryField256 {
     }
 
     /// Writes this `PrimeFieldRepr` as a little endian integer.
-    fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
         use byteorder::{LittleEndian, WriteBytesExt};
 
         for digit in self.repr.as_ref().iter() {
@@ -187,7 +188,7 @@ impl BinaryField256 {
     }
 
     /// Reads a little endian integer into this representation.
-    fn read_le<R: Read>(&mut self, mut reader: R) -> io::Result<()> {
+    pub fn read_le<R: Read>(&mut self, mut reader: R) -> io::Result<()> {
         use byteorder::{LittleEndian, ReadBytesExt};
 
         for digit in self.repr.as_mut().iter_mut() {
@@ -197,12 +198,33 @@ impl BinaryField256 {
         Ok(())
     }
   
-    fn from_repr(repr: [u32; 8]) -> Self {
+    pub fn from_repr(repr: [u32; 8]) -> Self {
         Self { repr }
     }
 
-    fn into_repr(&self) -> [u32; 8] {
+    pub fn into_repr(&self) -> [u32; 8] {
         self.repr.clone()
+    }
+
+    pub fn from_byte_repr(byte_repr: [u8; 32]) -> Self {
+        let mut repr : [u32; 8] = [0; 8];
+        for (input, output) in byte_repr.chunks(4).zip(repr.iter_mut()) {
+            *output = unsafe { 
+                std::mem::transmute::<&[u8], u32>(input) 
+            }.to_le()
+        }
+        Self {repr}
+    }
+
+    pub fn to_byte_repr(&self) -> [u8; 32] {
+        let mut byte_repr : [u8; 32] = [0; 32];
+        for (input, output) in self.repr.iter().zip(byte_repr.chunks_mut(4)) {
+            let temp = unsafe { 
+                std::mem::transmute::<u32, [u8; 4]>(input.to_le()) 
+            };
+            output.clone_from_slice(&temp);
+        }
+        byte_repr
     }
 }
 

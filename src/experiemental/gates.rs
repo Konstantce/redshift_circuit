@@ -141,14 +141,17 @@ pub enum Gate {
     // out = a * b
     MulGate([Variable; 3]),
     
-    // given element x, returns [x, x^2, x^4, x^8]
-    Power8Gate([Variable; 4]),
+    // given element x, returns [x, x^2, x^4]
+    Power4Gate([Variable; 3]),
     
     // out = a + b + c
     TernaryAdditionGate([Variable; 4]),
     
     // out = c_1 * a + c_2 * b
     LinearCombinationGate([Variable; 3], [Coeff; 2]),
+
+    // out = c_1 * a + c_2 * b + c_3 * c
+    LongLinearCombinationGate([Variable; 4], [Coeff; 3]),
     
     /// Takes two allocated numbers (a, b) and returns
     /// a if the condition is true, and otherwise.
@@ -182,8 +185,8 @@ impl Gate {
         Self::MulGate([left, right, output])
     }
 
-    pub(crate) fn new_power8_gate(x: Variable, x2: Variable, x4: Variable, x8: Variable) -> Self {
-        Self::Power8Gate([x, x2, x4, x8])
+    pub(crate) fn new_power4_gate(x: Variable, x2: Variable, x4: Variable) -> Self {
+        Self::Power4Gate([x, x2, x4])
     }
 
     pub(crate) fn new_ternary_addition_gate(a: Variable, b: Variable, c: Variable, out: Variable) -> Self {
@@ -192,6 +195,11 @@ impl Gate {
 
     pub(crate) fn new_linear_combination_gate(a: Variable, b: Variable, out: Variable, c_1: Coeff, c_2: Coeff) -> Self {
         Self::LinearCombinationGate([a, b, out], [c_1, c_2])
+    }
+
+    pub(crate) fn new_long_linear_combination_gate(
+        a: Variable, b: Variable, c: Variable, out: Variable, c_1: Coeff, c_2: Coeff, c_3: Coeff) -> Self {
+        Self::LongLinearCombinationGate([a, b, c, out], [c_1, c_2, c_3])
     }
 
     pub(crate) fn new_selector_gate(cond: Variable, a: Variable, b: Variable, out: Variable) -> Self {
