@@ -18,10 +18,17 @@ pub struct TestAssembly {
 
     input_assingments: Vec<Fr>,
     aux_assingments: Vec<Fr>,
-    is_finalized: bool
+    is_finalized: bool,
+
+    constraints_per_namespace: Vec<(String, usize)>,
+    cur_namespace_idx: usize,
 }
 
+
 impl BinaryConstraintSystem for TestAssembly {
+
+    type Root = Self;
+
     // allocate a variable
     fn alloc<F>(&mut self, value: F) -> Result<Variable, SynthesisError>
     where
@@ -87,6 +94,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_enforce_constant_gate(variable, constant);
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
@@ -96,6 +104,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_mul_gate(left, right, output);
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
@@ -105,6 +114,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_power4_gate(x, x2, x4);
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }    
@@ -115,6 +125,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_ternary_addition_gate(a, b, c, out);
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
@@ -125,6 +136,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_linear_combination_gate(a, b, out, Coeff::Full(c_1), Coeff::Full(c_2));
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
@@ -135,6 +147,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_long_linear_combination_gate(a, b, c, out, Coeff::Full(c_1), Coeff::Full(c_2), Coeff::Full(c_3));
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
@@ -145,6 +158,7 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_selector_gate(cond, a, b, out);
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
@@ -154,20 +168,23 @@ impl BinaryConstraintSystem for TestAssembly {
         let gate = Gate::new_equality_gate(left, right);
         self.aux_gates.push(gate);
         self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
 
         Ok(())
     }
 
-    fn push_namespace<NR, N>(&mut self, _: N)
+    fn push_namespace<NR, N>(&mut self, name_func: N)
     where
         NR: Into<String>,
         N: FnOnce() -> NR,
     {
-        // Do nothing; we don't care about namespaces in this context.
+        let namespace : String = name_func().into();
+        self.constraints_per_namespace.push((namespace, 0));
+        self.cur_namespace_idx = self.constraints_per_namespace.len() - 1;
     }
 
     fn pop_namespace(&mut self) {
-        // Do nothing; we don't care about namespaces in this context.
+        self.cur_namespace_idx = 0;
     }
 
     fn get_root(&mut self) -> &mut Self::Root {
@@ -191,6 +208,8 @@ impl TestAssembly {
             aux_assingments: vec![],
 
             is_finalized: false,
+            constraints_per_namespace: vec![("uncategorized".to_string(), 0)],
+            cur_namespace_idx: 0,
         };
 
         tmp
@@ -210,6 +229,8 @@ impl TestAssembly {
             aux_assingments: Vec::with_capacity(num_aux),
 
             is_finalized: false,
+            constraints_per_namespace: vec![("uncategorized".to_string(), 0)],
+            cur_namespace_idx: 0,
         };
 
         tmp

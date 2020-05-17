@@ -37,7 +37,8 @@ pub trait BinaryConstraintSystem {
     fn new_linear_combination_gate(
         &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>;
     fn new_long_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>;
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
+        c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>;
     fn new_selector_gate(&mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError>;
     fn new_equality_gate(&mut self, left: Variable, right: Variable) -> Result<(), SynthesisError>;
 
@@ -80,34 +81,66 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
         &mut self,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<Fr, SynthesisError>, A: FnOnce() -> AR, AR: Into<String>
+        where F: FnOnce() -> Result<Fr, SynthesisError>,
     {
-        self.0.alloc(annotation, f)
+        self.0.alloc(f)
     }
 
-    fn alloc_input<F, A, AR>(
+    fn alloc_input<F>(
         &mut self,
-        annotation: A,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<E::Fr, SynthesisError>, A: FnOnce() -> AR, AR: Into<String>
+        where F: FnOnce() -> Result<Fr, SynthesisError>,
     {
-        self.0.alloc_input(annotation, f)
+        self.0.alloc_input(f)
     }
 
-    fn enforce<A, AR, LA, LB, LC>(
-        &mut self,
-        annotation: A,
-        a: LA,
-        b: LB,
-        c: LC
-    )
-        where A: FnOnce() -> AR, AR: Into<String>,
-              LA: FnOnce(LinearCombination<E>) -> LinearCombination<E>,
-              LB: FnOnce(LinearCombination<E>) -> LinearCombination<E>,
-              LC: FnOnce(LinearCombination<E>) -> LinearCombination<E>
+    fn get_value(&self, variable: Variable) -> Result<Fr, SynthesisError> { 
+        self.0.get_value(variable)
+    }
+  
+    fn get_dummy_variable(&self) -> Variable {
+        self.0.get_dummy_variable()
+    }
+
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
+        self.0.new_enforce_constant_gate(variable, constant)
+    }
+
+    fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
+        self.0.new_mul_gate(left, right, output)
+    }
+
+    fn new_power4_gate(&mut self, x: Variable, x2: Variable, x4: Variable) -> Result<(), SynthesisError> {
+        self.0.new_power4_gate(x, x2, x4)
+    }
+
+    fn new_ternary_addition_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError> 
     {
-        self.0.enforce(annotation, a, b, c)
+        self.0.new_ternary_addition_gate(a, b, c, out)
+    }
+    fn new_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>
+    {
+        self.0.new_linear_combination_gate(a, b, out, c_1, c_2)
+    }
+
+    fn new_long_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
+        c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>
+    {
+        self.0.new_long_linear_combination_gate(a, b, c, out, c_1, c_2, c_3)
+    }
+
+    fn new_selector_gate(&mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError>
+    {
+        self.0.new_selector_gate(cond, a, b, out)
+    }
+
+    fn new_equality_gate(&mut self, left: Variable, right: Variable) -> Result<(), SynthesisError> 
+    {
+        self.0.new_equality_gate(left, right)
     }
 
     // Downstream users who use `namespace` will never interact with these
@@ -131,54 +164,83 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
     }
 }
 
-impl<'a, E: Engine, CS: ConstraintSystem<E>> Drop for Namespace<'a, E, CS> {
+
+impl<'a, CS: BinaryConstraintSystem> Drop for Namespace<'a, CS> {
     fn drop(&mut self) {
         self.get_root().pop_namespace()
     }
 }
 
-/// Convenience implementation of ConstraintSystem<E> for mutable references to
-/// constraint systems.
-impl<'cs, E: Engine, CS: ConstraintSystem<E>> ConstraintSystem<E> for &'cs mut CS {
+
+/// Convenience implementation of BinaryConstraintSystem for mutable references to constraint systems.
+impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
+    
     type Root = CS::Root;
 
-    fn one() -> Variable {
-        CS::one()
-    }
-
-    fn alloc<F, A, AR>(
+    fn alloc<F>(
         &mut self,
-        annotation: A,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<E::Fr, SynthesisError>, A: FnOnce() -> AR, AR: Into<String>
+        where F: FnOnce() -> Result<Fr, SynthesisError>
     {
-        (**self).alloc(annotation, f)
+        (**self).alloc(f)
     }
 
-    fn alloc_input<F, A, AR>(
+    fn alloc_input<F>(
         &mut self,
-        annotation: A,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<E::Fr, SynthesisError>, A: FnOnce() -> AR, AR: Into<String>
+        where F: FnOnce() -> Result<Fr, SynthesisError>
     {
-        (**self).alloc_input(annotation, f)
+        (**self).alloc_input(f)
     }
 
-    fn enforce<A, AR, LA, LB, LC>(
-        &mut self,
-        annotation: A,
-        a: LA,
-        b: LB,
-        c: LC
-    )
-        where A: FnOnce() -> AR, AR: Into<String>,
-              LA: FnOnce(LinearCombination<E>) -> LinearCombination<E>,
-              LB: FnOnce(LinearCombination<E>) -> LinearCombination<E>,
-              LC: FnOnce(LinearCombination<E>) -> LinearCombination<E>
+    fn get_value(&self, variable: Variable) -> Result<Fr, SynthesisError> { 
+        (**self).get_value(variable)
+    }
+  
+    fn get_dummy_variable(&self) -> Variable {
+        (**self).get_dummy_variable()
+    }
+
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
+        (**self).new_enforce_constant_gate(variable, constant)
+    }
+
+    fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
+        (**self).new_mul_gate(left, right, output)
+    }
+
+    fn new_power4_gate(&mut self, x: Variable, x2: Variable, x4: Variable) -> Result<(), SynthesisError> {
+        (**self).new_power4_gate(x, x2, x4)
+    }
+
+    fn new_ternary_addition_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError> 
     {
-        (**self).enforce(annotation, a, b, c)
+        (**self).new_ternary_addition_gate(a, b, c, out)
+    }
+    fn new_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>
+    {
+        (**self).new_linear_combination_gate(a, b, out, c_1, c_2)
+    }
+
+    fn new_long_linear_combination_gate(
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
+        c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>
+    {
+        (**self).new_long_linear_combination_gate(a, b, c, out, c_1, c_2, c_3)
+    }
+
+    fn new_selector_gate(&mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError>
+    {
+        (**self).new_selector_gate(cond, a, b, out)
+    }
+
+    fn new_equality_gate(&mut self, left: Variable, right: Variable) -> Result<(), SynthesisError> 
+    {
+        (**self).new_equality_gate(left, right)
     }
 
     fn push_namespace<NR, N>(&mut self, name_fn: N)
