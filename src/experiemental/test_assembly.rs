@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use super::cs::*;
 use super::gates::*;
 use super::binary_field::BinaryField;
+use enum_map::{enum_map, EnumMap};
 
 
 pub struct TestAssembly<E: Engine> {
@@ -22,6 +23,7 @@ pub struct TestAssembly<E: Engine> {
 
     constraints_per_namespace: Vec<(String, usize)>,
     cur_namespace_idx: usize,
+    constraints_per_type: EnumMap::<GateType, usize>,
 }
 
 
@@ -58,6 +60,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
 
         let input_var = Variable(Index::Input(index));
         let gate = Gate::new_enforce_constant_gate(input_var, value);
+        self.constraints_per_type[GateType::ConstantGate] += 1;
 
         self.input_gates.push(gate);
 
@@ -95,6 +98,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::ConstantGate] += 1;
 
         Ok(())
     }
@@ -105,6 +109,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::AddGate] += 1;
 
         Ok(())
     }
@@ -115,6 +120,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::MulGate] += 1;
 
         Ok(())
     }
@@ -125,6 +131,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::Power4Gate] += 1;
 
         Ok(())
     }    
@@ -136,6 +143,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::TernaryAdditionGate] += 1;
 
         Ok(())
     }
@@ -147,6 +155,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::LinearCombinationGate] += 1;
 
         Ok(())
     }
@@ -160,6 +169,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::LongLinearCombinationGate] += 1;
 
         Ok(())
     }
@@ -171,6 +181,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::SelectorGate] += 1;
 
         Ok(())
     }
@@ -181,6 +192,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        self.constraints_per_type[GateType::EqualityGate] += 1;
 
         Ok(())
     }
@@ -222,6 +234,7 @@ impl<E: Engine> TestAssembly<E> {
             is_finalized: false,
             constraints_per_namespace: vec![("uncategorized".to_string(), 0)],
             cur_namespace_idx: 0,
+            constraints_per_type: EnumMap::<_, _>::new(),
         };
 
         tmp
@@ -243,6 +256,7 @@ impl<E: Engine> TestAssembly<E> {
             is_finalized: false,
             constraints_per_namespace: vec![("uncategorized".to_string(), 0)],
             cur_namespace_idx: 0,
+            constraints_per_type: EnumMap::<_, _>::new(),
         };
 
         tmp
@@ -454,6 +468,17 @@ impl<E: Engine> TestAssembly<E> {
     }
 
     pub fn print_statistics(&self) {
-        println!("Total number of constraints:", i+1);
+        println!("Total number of gates: {}", self.num_gates());
+
+        println!("Gates per Operation:");
+        // categorize all gates by namespaces
+        for (namespace, num_cnstr) in self.constraints_per_namespace.iter() {
+            println!("{} requires {} gates.", namespace, num_cnstr);
+        }
+
+        println!("Gates per GateType:");
+        for (gate_type, num_cnstr) in self.constraints_per_type.iter() {
+            println!("There are {} gates of type {}.", num_cnstr, gate_type);
+        }
     }
 }

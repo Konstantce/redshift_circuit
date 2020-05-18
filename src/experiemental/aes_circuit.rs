@@ -2,18 +2,19 @@
 // here is the implementation of AES circuit partially based on STARK paper
 
 use super::basic_gadgets::*;
-use super::binary_field::BinaryField128 as Fr;
+use super::binary_field::BinaryField;
 use super::cs::BinaryConstraintSystem as ConstraintSystem;
+use super::cs::*;
 
 use crate::bellman::SynthesisError;
 use crate::bellman::pairing::ff::Field;
 use rand::Rng;
 
-type RijndaelState = Vec<AllocatedNum>;
+type RijndaelState<E: Engine> = Vec<AllocatedNum<E>>;
 
 
 #[derive(Debug, Clone)]
-pub struct RijndaelGadget {
+pub struct RijndaelGadget<E: Engine> {
     // block size in 32bits words
     Nb : usize,
     // key size in 32bits words
@@ -21,33 +22,33 @@ pub struct RijndaelGadget {
     // number of rounds
     Nr: usize,
     // initial state for Davis-Meyer transformation
-    hash_state: Vec<AllocatedNum>, 
+    hash_state: RijndaelState<E>, 
     // coeffs of c_i of linearized polynomial C used in ByteSub
-    byte_sub_constants: Vec<Fr>,
+    byte_sub_constants: Vec<E::Fr>,
     // offsets used in ShiftRow
     shift_offsets: Vec<usize>,
     // constant elemets of GF(2^8) used in MixColumns
-    g0 : Fr,
-    g1: Fr,
+    g0 : E::Fr,
+    g1: E::Fr,
     // constants used in subfields decomposition
-    s_128_to_8 : Fr,
-    s_128_to_32: Fr,
-    s_32_to_8: Fr,
+    s_128_to_8 : E::Fr,
+    s_128_to_32: E::Fr,
+    s_32_to_8: E::Fr,
     // constant used in key derivation
     // TODO: actually it is a constant, but my cs is not perfect yet
     // and doesn't allow to use constant in the place where it is used
-    R_con: AllocatedNum,
+    R_con: AllocatedNum<E>,
 }
 
 
-impl RijndaelGadget {
+impl<E: Engine> RijndaelGadget<E> {
 
-    pub fn new<CS: ConstraintSystem>(cs: &mut CS, Nb: usize, Nk: usize, Nr: usize, shift_offsets: Vec<usize>) -> Self {
+    pub fn new<CS: ConstraintSystem<E>>(cs: &mut CS, Nb: usize, Nk: usize, Nr: usize, shift_offsets: Vec<usize>) -> Self {
         Self {
             Nb, 
             Nk, 
             Nr,
-            hash_state: (0..Nb).map(|_| AllocatedNum::alloc_random(cs)).collect::<Result<Vec<_>, _>>().unwrap(),
+            hash_state: (0..Nb).map(|_| AllocatedNum::<E>::alloc_random(cs)).collect::<Result<Vec<_>, _>>().unwrap(),
             byte_sub_constants: (0..8).map(|_| rand::thread_rng().gen()).collect(),
             shift_offsets,
             g0: rand::thread_rng().gen(),
@@ -59,8 +60,8 @@ impl RijndaelGadget {
         }
     }
 
-    fn ColumnDecomposition<CS: ConstraintSystem>(
-        &self, cs: &mut CS, state: &mut RijndaelState) -> Result<(), SynthesisError> 
+    fn ColumnDecomposition<CS: ConstraintSystem<E>>(
+        &self, cs: &mut CS, state: &mut RijndaelState<E>) -> Result<(), SynthesisError> 
     {
         let mut decomposed_state = Vec::with_capacity(state.len() * 4);
 
@@ -73,8 +74,8 @@ impl RijndaelGadget {
         Ok(())
     }
 
-    fn ColumnComposition<CS: ConstraintSystem>(
-        &self, cs: &mut CS, state: &mut RijndaelState) -> Result<(), SynthesisError> 
+    fn ColumnComposition<CS: ConstraintSystem<E>>(
+        &self, cs: &mut CS, state: &mut RijndaelState<E>) -> Result<(), SynthesisError> 
     {
         let mut composed_state = Vec::with_capacity(state.len() / 4);
 
@@ -89,8 +90,8 @@ impl RijndaelGadget {
         Ok(())
     }
 
-    fn ByteSub<CS: ConstraintSystem>(
-        &self, cs: &mut CS, state: &mut RijndaelState, subfield_check: bool) -> Result<(), SynthesisError> 
+    fn ByteSub<CS: ConstraintSystem<E>>(
+        &self, cs: &mut CS, state: &mut RijndaelState<E>, subfield_check: bool) -> Result<(), SynthesisError> 
     {   
         for elem in state.iter_mut() {
 
@@ -124,7 +125,7 @@ impl RijndaelGadget {
             // res = y2 + c_7 * x7
 
             let cc = &self.byte_sub_constants;
-            let one = Fr::one();
+            let one = E::Fr::one();
 
             let y0 = AllocatedNum::long_linear_combination_gadget(cs, &x, &x1, &x2, &cc[0], &cc[1], &cc[2])?;
             let y1 = AllocatedNum::long_linear_combination_gadget(cs, &y0, &x3, &x4, &one, &cc[3], &cc[4])?;
@@ -137,7 +138,7 @@ impl RijndaelGadget {
         Ok(())
     }
 
-    fn ShiftRow(&self, state: &mut RijndaelState) -> Result<(), SynthesisError>
+    fn ShiftRow(&self, state: &mut RijndaelState<E>) -> Result<(), SynthesisError>
     {
         // cyclically rotate each row of RinjndaleState matrix
         // it's all about renumeration, so won't give any new constants
@@ -145,7 +146,7 @@ impl RijndaelGadget {
         Ok(())
     }
 
-    fn MixColumn<CS: ConstraintSystem>(&self, cs: &mut CS, state: &mut RijndaelState) -> Result<(), SynthesisError> 
+    fn MixColumn<CS: ConstraintSystem<E>>(&self, cs: &mut CS, state: &mut RijndaelState<E>) -> Result<(), SynthesisError> 
     {
         // for each column = [PO, P1, P2, P3]
         // do the following matrix multiplication in place (here [Q0, Q1, Q2, Q3] is the new resulting column)
@@ -183,8 +184,8 @@ impl RijndaelGadget {
 
     }
 
-    fn AddRoundKey<CS: ConstraintSystem>(
-        &self, cs: &mut CS, state: &mut RijndaelState, key: &RijndaelState, round: usize) -> Result<(), SynthesisError>
+    fn AddRoundKey<CS: ConstraintSystem<E>>(
+        &self, cs: &mut CS, state: &mut RijndaelState<E>, key: &RijndaelState<E>, round: usize) -> Result<(), SynthesisError>
     {
         // simle element-wise addition
         let start = round * self.Nb;
@@ -199,15 +200,15 @@ impl RijndaelGadget {
         Ok(())
     }
 
-    fn KeyShedule<CS: ConstraintSystem>(
-        &self, cs: &mut CS, master_key: &mut RijndaelState) -> Result<RijndaelState, SynthesisError>
+    fn KeyShedule<CS: ConstraintSystem<E>>(
+        &self, cs: &mut CS, master_key: &mut RijndaelState<E>) -> Result<RijndaelState<E>, SynthesisError>
     {
         // we assume that master_ley is given in compressed form: 
         // i.e. it is represented as vector of length NK consisting of GF(2^128) elems
         // we start by decompressing each of them into 16 elements
         // so we demand Nk to be a multiple of 4 for now
 
-        let mut key : RijndaelState = Vec::with_capacity(self.Nb * (self.Nr+1));
+        let mut key : RijndaelState<E> = Vec::with_capacity(self.Nb * (self.Nr+1));
         assert_eq!(self.Nr % 4, 0);
 
         for elem in master_key.iter() {
@@ -237,13 +238,14 @@ impl RijndaelGadget {
         Ok(key)
     }
 
-    pub fn absord<CS: ConstraintSystem>(&self, cs: &mut CS, elem: AllocatedNum) -> Result<(), SynthesisError> 
+    pub fn absord<CS: ConstraintSystem<E>>(&self, cs: &mut CS, elem: AllocatedNum<E>) -> Result<(), SynthesisError> 
     {
 
         Ok(())
     }
 
-    pub fn squeeze<CS: ConstraintSystem>(&self, cs: &mut CS, elem: AllocatedNum) -> Result<AllocatedNum, SynthesisError>
+    pub fn squeeze<CS: ConstraintSystem<E>>(
+        &self, cs: &mut CS, elem: AllocatedNum<E>) -> Result<AllocatedNum<E>, SynthesisError>
     {
 
     }

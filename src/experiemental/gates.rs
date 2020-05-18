@@ -3,6 +3,8 @@ use std::ops::Neg;
 use crate::bellman::pairing::ff::Field;
 
 use enum_map::Enum;
+use std::error::Error;
+use std::fmt;
 
 
 pub enum Coeff<Fr: BinaryField> {
@@ -146,6 +148,26 @@ pub enum GateType {
     LongLinearCombinationGate,
     SelectorGate,
     EqualityGate,
+}
+
+
+impl fmt::Display for GateType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let description = match self {
+            GateType::EmptyGate => "Empty Gate",
+            GateType::ConstantGate => "Constant Gate",
+            GateType::AddGate => "Addition Gate",
+            GateType::MulGate => "Multiplication Gate",
+            GateType::Power4Gate => "Power4 Gate",
+            GateType::TernaryAdditionGate => "Ternary Addition Gate",
+            GateType::LinearCombinationGate => "Linear Combination Gate",
+            GateType::LongLinearCombinationGate => "Long Linear Combination Gate",
+            GateType::SelectorGate => "Selector Gate",
+            GateType::EqualityGate => "Equality Gate",
+        };
+        
+        write!(f, "{}", description)
+    }
 }
 
 pub enum Gate<Fr: BinaryField> {
