@@ -152,12 +152,12 @@ impl<E: Engine, O: OracleGadget<E>> FromStream<E, FriParams> for RedshiftProof<E
         iter: &mut I,
         fri_params: FriParams,
     ) -> Result<Self, SynthesisError> 
-    {
-              
+    {             
         // containes opening values for:
         // a, b, c, c_shifted, q_l, q_r, q_o, q_m, q_c, q_add_sel, 
         // s_id, sigma_1, sigma_2, sigma_3,
         // z_1, z_2, z_1_shifted, z_2_shifted, t_low, t_mid, t_high
+
         let labels = ["a", "b", "c", "c_shifted", "q_l", "q_r", "q_o", "q_m", "q_c", "q_add_sel", 
             "s_id", "sigma_1", "sigma_2", "sigma_3", "z_1", "z_2", "z_1_shifted", "z_2_shifted",
             "t_low", "t_mid", "t_high"];

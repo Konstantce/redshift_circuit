@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use super::cs::*;
 use super::gates::*;
-use super::binary_field::BinaryField256 as Fr;
+use super::binary_field::BinaryField128 as Fr;
 
 
 pub struct TestAssembly {
@@ -92,6 +92,16 @@ impl BinaryConstraintSystem for TestAssembly {
     fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
 
         let gate = Gate::new_enforce_constant_gate(variable, constant);
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+
+        Ok(())
+    }
+
+    fn new_add_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
+
+        let gate = Gate::new_add_gate(left, right, output);
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
@@ -267,6 +277,20 @@ impl TestAssembly {
                     if expected_value != *value {
                         println!("Unsatisfied at Constant gate nom. {}", i+1);
                         println!("Input value = {}, Const value = {}", expected_value, *value);
+                        return false;
+                    }
+                },
+
+                Gate::AddGate(var_arr) => {
+                    let a_val = self.get_value(var_arr[0]).expect("must get a variable value");
+                    let b_val = self.get_value(var_arr[1]).expect("must get a variable value");
+                    let c_val = self.get_value(var_arr[2]).expect("must get a variable value");
+                    
+                    let mut temp = a_val.clone();
+                    temp.add_assign(&b_val);
+                    if temp != c_val {
+                        println!("Unsatisfied at Add gate nom. {}", i+1);
+                        println!("A = {}, B = {}, OUT = {}", a_val, b_val, c_val);
                         return false;
                     }
                 },

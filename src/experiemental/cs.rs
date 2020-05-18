@@ -1,4 +1,4 @@
-use super::binary_field::BinaryField256 as Fr;
+use super::binary_field::BinaryField128 as Fr;
 use super::gates::{Gate, Variable};
 
 use crate::bellman::SynthesisError;
@@ -30,6 +30,7 @@ pub trait BinaryConstraintSystem {
     fn get_dummy_variable(&self) -> Variable;
 
     fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError>;
+    fn new_add_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError>;
     fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError>;
     fn new_power4_gate(&mut self, x: Variable, x2: Variable, x4: Variable) -> Result<(), SynthesisError>;
     fn new_ternary_addition_gate(
@@ -105,6 +106,10 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
 
     fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
         self.0.new_enforce_constant_gate(variable, constant)
+    }
+
+    fn new_add_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
+        self.0.new_add_gate(left, right, output)
     }
 
     fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
@@ -205,6 +210,10 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
 
     fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
         (**self).new_enforce_constant_gate(variable, constant)
+    }
+
+    fn new_add_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {
+        (**self).new_add_gate(left, right, output)
     }
 
     fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError> {

@@ -1,4 +1,4 @@
-use super::binary_field::BinaryField256 as Fr;
+use super::binary_field::BinaryField128 as Fr;
 use std::ops::Neg;
 use crate::bellman::pairing::ff::Field;
 
@@ -137,6 +137,9 @@ pub enum Gate {
 
     // x = c
     ConstantGate(Variable, Fr),
+
+    // out = a + b
+    AddGate([Variable; 3]),
     
     // out = a * b
     MulGate([Variable; 3]),
@@ -179,6 +182,10 @@ impl Gate {
 
     pub(crate) fn new_enforce_constant_gate(variable: Variable, constant: Fr) -> Self {
         Self::ConstantGate(variable, constant)
+    }
+
+    pub(crate) fn new_add_gate(left: Variable, right: Variable, output: Variable) -> Self {
+        Self::AddGate([left, right, output])
     }
 
     pub(crate) fn new_mul_gate(left: Variable, right: Variable, output: Variable) -> Self {

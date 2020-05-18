@@ -105,15 +105,15 @@ impl<'a, E: AsMut<[u32]>> BitView<'a, E> {
     }
 }
 
-// Galois field(2^256) with generator poly f(x)=x^256+x^10+x^5+x^2+1
+// Galois field(2^128) with generator poly f(x)=x^{128}+x^{77}+x^{35}+x^{11}+1
 #[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
-pub struct BinaryField256
+pub struct BinaryField128
 {
-    repr: [u32; 8],
+    repr: [u32; 4],
 }
 
 
-impl ::std::fmt::Debug for BinaryField256
+impl ::std::fmt::Debug for BinaryField128
 {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(f, "0x")?;
@@ -125,14 +125,14 @@ impl ::std::fmt::Debug for BinaryField256
     }
 }
 
-impl ::rand::Rand for BinaryField256 {
+impl ::rand::Rand for BinaryField128 {
     #[inline(always)]
     fn rand<R: ::rand::Rng>(rng: &mut R) -> Self {
-        BinaryField256{ repr: rng.gen()}
+        BinaryField128{ repr: rng.gen()}
     }
 }
 
-impl ::std::fmt::Display for BinaryField256 {
+impl ::std::fmt::Display for BinaryField128 {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(f, "0b")?;
         for i in self.repr.iter().rev() {
@@ -144,14 +144,14 @@ impl ::std::fmt::Display for BinaryField256 {
 }
 
 
-impl BinaryField256 {
+impl BinaryField128 {
 
     pub fn num_bits(&self) -> u32 {
-        256
+        128
     }
 
     pub fn capacity(&self) -> u32 {
-        256
+        128
     }
 
     /// Writes this `PrimeFieldRepr` as a big endian integer.
@@ -198,16 +198,16 @@ impl BinaryField256 {
         Ok(())
     }
   
-    pub fn from_repr(repr: [u32; 8]) -> Self {
+    pub fn from_repr(repr: [u32; 4]) -> Self {
         Self { repr }
     }
 
-    pub fn into_repr(&self) -> [u32; 8] {
+    pub fn into_repr(&self) -> [u32; 4] {
         self.repr.clone()
     }
 
-    pub fn from_byte_repr(byte_repr: [u8; 32]) -> Self {
-        let mut repr : [u32; 8] = [0; 8];
+    pub fn from_byte_repr(byte_repr: [u8; 16]) -> Self {
+        let mut repr : [u32; 4] = [0; 4];
         for (input, output) in byte_repr.chunks(4).zip(repr.iter_mut()) {
             let mut temp : [u8; 4] = [0; 4];
             
@@ -223,8 +223,8 @@ impl BinaryField256 {
         Self {repr}
     }
 
-    pub fn into_byte_repr(&self) -> [u8; 32] {
-        let mut byte_repr : [u8; 32] = [0; 32];
+    pub fn into_byte_repr(&self) -> [u8; 16] {
+        let mut byte_repr : [u8; 16] = [0; 16];
         for (input, output) in self.repr.iter().zip(byte_repr.chunks_mut(4)) {
             let temp = unsafe { 
                 std::mem::transmute::<u32, [u8; 4]>(input.to_le()) 
@@ -249,14 +249,14 @@ unsafe fn add_ptr_len(
 }
 
 
-impl Field for BinaryField256{
+impl Field for BinaryField128 {
 
     fn zero() -> Self {
-        Self { repr : [0, 0, 0, 0, 0, 0, 0, 0]}
+        Self { repr : [0, 0, 0, 0]}
     }
 
     fn one() -> Self {
-        Self { repr : [1, 0, 0, 0, 0, 0, 0, 0]}
+        Self { repr : [1, 0, 0, 0]}
     }
 
     /// Returns true iff this element is zero.
@@ -303,7 +303,7 @@ impl Field for BinaryField256{
         }
 
         // we are working in standard polynomial basis
-        let mut raw_res = [0u32; 16];
+        let mut raw_res = [0u32; 8];
         let left = BigUint::from_slice(&self.repr[..]);
         let right = BigUint::from_slice(&other.repr[..]);
         let int_res = left * right;
@@ -315,17 +315,17 @@ impl Field for BinaryField256{
         }
 
         {
-            // recall that out generator polynomial is f(x)=x^256+x^10+x^5+x^2+1
-            // corresponding distance betrween nearby indexes are 256 - 10 = 246, 10-5=5, 5-2=3, 3-1=2
+            // recall that out generator polynomial is f(x)=x^{128}+x^{77}+x^{35}+x^{11}+1
+            // corresponding distance betrween nearby indexes are 128 - 77 = 51, 77-35=42, 35-11=24, 11-1=10
 
             let mut bit_view = BitView::new(&mut raw_res);
             let mut high_bit_pos = bit_view.next_one_pos().unwrap();
 
-            while high_bit_pos >= 256 {
+            while high_bit_pos >= 128 {
                 let mut cur_pos = high_bit_pos;
                 bit_view.toggle_bit_at_pos(cur_pos);
 
-                for diff in [246usize, 5usize, 3usize, 2usize].iter() {
+                for diff in [51usize, 42usize, 24usize, 10usize].iter() {
                     cur_pos -= diff;
                     bit_view.toggle_bit_at_pos(cur_pos);
                 }
@@ -334,7 +334,7 @@ impl Field for BinaryField256{
             }
         }
         
-        self.repr.copy_from_slice(&raw_res[0..8]);
+        self.repr.copy_from_slice(&raw_res[0..4]);
     }
 
     /// Exponentiates this element by a power of the base prime modulus via

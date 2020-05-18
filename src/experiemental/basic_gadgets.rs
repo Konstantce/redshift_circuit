@@ -1,6 +1,6 @@
 use super::gates::Variable;
 use super::cs::BinaryConstraintSystem as ConstraintSystem;
-use super::binary_field::BinaryField256 as Fr;
+use super::binary_field::BinaryField128 as Fr;
 use super::cs::*;
 use crate::bellman::SynthesisError;
 use crate::bellman::pairing::ff::Field;
@@ -88,6 +88,30 @@ impl AllocatedNum {
 
     pub fn get_variable(&self) -> Variable {
         self.variable
+    }
+
+    pub fn add<CS>(
+        &self,
+        cs: &mut CS,
+        other: &Self
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let mut value = None;
+
+        let var = cs.alloc(|| {
+            let mut tmp = *self.value.get()?;
+            tmp.add_assign(other.value.get()?);
+            value = Some(tmp);
+            Ok(tmp)
+        })?;
+
+        cs.new_add_gate(self.get_variable(), other.get_variable(), var)?;
+
+        Ok(AllocatedNum {
+            value,
+            variable: var
+        })
     }
 
     pub fn mul<CS>(
@@ -231,6 +255,44 @@ impl AllocatedNum {
         })
     }
 
+    pub fn long_linear_combination_gadget<CS>(
+        cs: &mut CS,
+        a: &Self,
+        b: &Self,
+        c: &Self,
+        c1: &Fr,
+        c2: &Fr,
+        c3: &Fr,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem
+    {
+        let mut value = None;
+
+        let out_var = cs.alloc(|| {
+            let mut tmp1 = *a.value.get()?;
+            tmp1.mul_assign(c1);
+            let mut tmp2 = *b.value.get()?;
+            tmp2.mul_assign(c2);
+            tmp1.add_assign(&tmp2);
+            tmp2 = *c.value.get()?;
+            tmp2.mul_assign(c3);
+            tmp1.add_assign(&tmp2);
+
+            value = Some(tmp1);
+            Ok(tmp1)
+        })?;
+
+        let a_var = a.get_variable();
+        let b_var = b.get_variable();
+        let c_var = c.get_variable();
+        cs.new_long_linear_combination_gate(a_var, b_var, c_var, out_var, c1.clone(), c2.clone(), c3.clone())?;
+
+        Ok(AllocatedNum {
+            value,
+            variable: out_var
+        })
+    }
+
     pub fn selector_gadget<CS>(
         cs: &mut CS,
         cond: &Self,
@@ -355,7 +417,7 @@ impl AllocatedNum {
     /// NB: we do not check here that each x_i belongs to GH(2^128), 
     /// it should be done explicitely with the help of check_subfield_gadget
     
-    pub fn unpack_into_subfield_decomposition<CS>(
+    pub fn unpack_128_into_8<CS>(
         &self,
         cs: &mut CS,
         // NB: s can be recalculated on the fly if really needed
@@ -372,7 +434,7 @@ impl AllocatedNum {
             let var = cs.alloc(|| {
                 let repr = repr.get()?;
                 let byte = repr[idx]; 
-                let tmp =  Fr::from_repr([byte as u32, 0, 0, 0, 0, 0, 0, 0]);
+                let tmp =  Fr::from_repr([byte as u32, 0, 0, 0]);
                 
                 // and here we need to return back to initial basis!
                 *value = Some(tmp);
@@ -467,7 +529,7 @@ impl AllocatedNum {
     /// given separate elements x_i \in GF(2^8)
     /// pack them all in single x \in GF(2^128)
     
-    pub fn pack<CS>(
+    pub fn pack_8_t0_128<CS>(
         cs: &mut CS,
         elems: [&Self; 16],
         s: &Fr,
@@ -563,6 +625,114 @@ impl AllocatedNum {
             value,
             variable: var
         })
+    }
+
+    pub fn unpack_128_into_8<CS>(
+        &self,
+        cs: &mut CS,
+        // NB: s can be recalculated on the fly if really needed
+        s: &Fr,
+    ) -> Result<[Self; 16], SynthesisError>
+        where CS: ConstraintSystem
+    {
+        // TODO: we need to change basis first!
+        let repr = self.value.map(|e| e.into_byte_repr());
+        let mut values : [Option<Fr>; 16] = [None; 16];
+        let mut allocated_nums: [Option<AllocatedNum>; 16] = [None; 16];
+        
+        for (idx, (alloc_num, value)) in allocated_nums.iter_mut().zip(values.iter_mut()).enumerate() {
+            let var = cs.alloc(|| {
+                let repr = repr.get()?;
+                let byte = repr[idx]; 
+                let tmp =  Fr::from_repr([byte as u32, 0, 0, 0]);
+                
+                // and here we need to return back to initial basis!
+                *value = Some(tmp);
+                Ok(tmp)
+            })?;
+            *alloc_num = Some(AllocatedNum {
+                variable: var,
+                value: *value,
+            });
+        }
+
+        // we do also need several auxiliary variables as we using LongLinearCombinationGates 
+        // that can sum up to only 3 elements 
+        // NB: think how it can be reorganized with "looking forward" custom selector
+        // y_0 = x_0 +  s * x_1 + s^2 * x_2
+        // y_1 = y_0 + s^3 * x_3 + s^4 * x_4
+        // y_2 = y_1 + s^5 * x_5 + s^6 * x_6
+        // y_3 = y_2 + s^7 * x_7 + s^8 * x_8
+        // y_4 = y_3 + s^9 * x_9 + s^10 * x_10
+        // y_5 = y_4 + s^11 * x_11 + s^12 * x_12
+        // y_6 = y_5 + s^13 * x_13 + s^14 * x_14
+        // x = y_6 + s^15 * x_15
+
+        let mut aux_y : [Option<Variable>; 7] = [None; 7];
+        let mut slice_length = 3;
+
+        for idx in 0..7 {
+            aux_y[idx] = Some(cs.alloc(|| {
+                let mut repr = repr.get()?.clone();
+                for i in slice_length..16 {
+                    repr[i] = 0;
+                } 
+                let tmp =  Fr::from_byte_repr(repr);
+ 
+                Ok(tmp)
+            })?);
+            slice_length += 2;
+        }
+
+        let mut coef = s.clone();
+        let mut next_coef = coef.clone();
+        next_coef.mul_assign(s);
+        let mut cur_alloc_num_idx = 0;
+
+        for idx in 0..8 {
+            
+            match idx {
+                0 => {
+                    cs.new_long_linear_combination_gate(
+                        allocated_nums[0].unwrap().get_variable(),
+                        allocated_nums[1].unwrap().get_variable(),
+                        allocated_nums[2].unwrap().get_variable(),
+                        aux_y[0].unwrap(),
+                        Fr::one(),
+                        coef,
+                        next_coef,
+                    )?;
+                    cur_alloc_num_idx += 3;
+                },
+
+                7 => cs.new_linear_combination_gate(
+                        aux_y[6].unwrap(),
+                        allocated_nums[15].unwrap().get_variable(),
+                        self.get_variable(),
+                        Fr::one(),
+                        coef,
+                    )?,
+                    
+                _ => {
+                    cs.new_long_linear_combination_gate(
+                        aux_y[idx-1].unwrap(),
+                        allocated_nums[cur_alloc_num_idx].unwrap().get_variable(),
+                        allocated_nums[cur_alloc_num_idx + 1].unwrap().get_variable(),
+                        aux_y[idx].unwrap(),
+                        Fr::one(),
+                        coef,
+                        next_coef,
+                    )?;
+                    cur_alloc_num_idx += 2;
+                }             
+            }
+
+            coef = next_coef.clone();
+            next_coef.mul_assign(s);
+        }
+
+        let unwrapped = allocated_nums.map(|x| x.unwrap());
+        Ok(unwrapped)
     } 
 }
         
