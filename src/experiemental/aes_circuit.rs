@@ -1,3 +1,4 @@
+#[allow(non_camel_case_types)]
 // here is the implementation of AES circuit partially based on STARK paper
 
 use super::basic_gadgets::*;
@@ -28,6 +29,14 @@ pub struct RijndaelGadget {
     // constant elemets of GF(2^8) used in MixColumns
     g0 : Fr,
     g1: Fr,
+    // constants used in subfields decomposition
+    s_128_to_8 : Fr,
+    s_128_to_32: Fr,
+    s_32_to_8: Fr,
+    // constant used in key derivation
+    // TODO: actually it is a constant, but my cs is not perfect yet
+    // and doesn't allow to use constant in the place where it is used
+    R_con: AllocatedNum,
 }
 
 
@@ -38,17 +47,51 @@ impl RijndaelGadget {
             Nb, 
             Nk, 
             Nr,
-            hash_state: (0..Nb*4).map(|_| AllocatedNum::alloc_random(cs)).collect::<Result<Vec<_>, _>>().unwrap(),
+            hash_state: (0..Nb).map(|_| AllocatedNum::alloc_random(cs)).collect::<Result<Vec<_>, _>>().unwrap(),
             byte_sub_constants: (0..8).map(|_| rand::thread_rng().gen()).collect(),
             shift_offsets,
             g0: rand::thread_rng().gen(),
             g1: rand::thread_rng().gen(),
+            s_128_to_8 : rand::thread_rng().gen(),
+            s_128_to_32: rand::thread_rng().gen(),
+            s_32_to_8: rand::thread_rng().gen(),
+            R_con: AllocatedNum::alloc_random(cs).unwrap(),
         }
+    }
+
+    fn ColumnDecomposition<CS: ConstraintSystem>(
+        &self, cs: &mut CS, state: &mut RijndaelState) -> Result<(), SynthesisError> 
+    {
+        let mut decomposed_state = Vec::with_capacity(state.len() * 4);
+
+        for column in state.into_iter() {
+            let tmp = column.unpack_32_into_8(cs, &self.s_32_to_8)?;
+            decomposed_state.extend(tmp.into_iter());
+        }
+
+        *state = decomposed_state;
+        Ok(())
+    }
+
+    fn ColumnComposition<CS: ConstraintSystem>(
+        &self, cs: &mut CS, state: &mut RijndaelState) -> Result<(), SynthesisError> 
+    {
+        let mut composed_state = Vec::with_capacity(state.len() / 4);
+
+        for column in state.chunks(4) {
+            let args = [&column[0], &column[1], &column[2], &column[3]];
+            let tmp = AllocatedNum::pack_8_t0_32(cs, args, &self.s_32_to_8)?;
+            
+            composed_state.push(tmp);
+        }
+
+        *state = composed_state;
+        Ok(())
     }
 
     fn ByteSub<CS: ConstraintSystem>(
         &self, cs: &mut CS, state: &mut RijndaelState, subfield_check: bool) -> Result<(), SynthesisError> 
-    {
+    {   
         for elem in state.iter_mut() {
 
             // if x was initially zero we should left it unchanged, else inverse
@@ -72,7 +115,7 @@ impl RijndaelGadget {
             let [x7, x8] = x6.pow4(cs)?;
 
             if subfield_check {
-                AllocatedNum::check_subfield_gadget(cs, &x, &x8);
+                AllocatedNum::check_subfield_gadget(cs, &x, &x8)?;
             }
 
             // y0 = c_0 * x + c_1 * x1 + c_2 * x2
@@ -80,7 +123,7 @@ impl RijndaelGadget {
             // y2 = y1 + c_5 * x5 + c_6 * x6
             // res = y2 + c_7 * x7
 
-            let cc = self.byte_sub_constants;
+            let cc = &self.byte_sub_constants;
             let one = Fr::one();
 
             let y0 = AllocatedNum::long_linear_combination_gadget(cs, &x, &x1, &x2, &cc[0], &cc[1], &cc[2])?;
@@ -106,31 +149,104 @@ impl RijndaelGadget {
     {
         // for each column = [PO, P1, P2, P3]
         // do the following matrix multiplication in place (here [Q0, Q1, Q2, Q3] is the new resulting column)
-        // g0, g1 are predefined constants in GF(2^8)
-        
-        P0[j](t+1) = g0 · P0[j](t) + g1 · P1[j](t) + P2[j](t) + P3[j](t)
-P1[j](t+1) = P0[j](t) + g0 · P1[j](t) + g1 · P2[j](t) + P3[j](t)
-P2[j](t+1) = P0[j](t) + P1[j](t) + g0 · P2[j](t) + g1 · P3[j](t)
-P3[j](t+1) = g1 · P0[j](t) + P1[j](t) + P2[j](t) + g0 · P3[j](t)
+        // g0, g1 are predefined constants in GF(2^8)        
+        // Q0 = g0 · P0 + g1 · P1 + P2 + P3
+        // Q1 = P0 + g0 · P1 + g1 · P2 + P3
+        // Q2 = P0 + P1 + g0 · P2 + g1 · P3
+        // Q3 = g1 · P0 + P1 + P2 + g0 · P3
+
+        for column in state.chunks_mut(4) {
+            let P0 = column[0];
+            let P1 = column[1];
+            let P2 = column[2];
+            let P3 = column[3];
+
+            let y0 = AllocatedNum::linear_combination_gadget(cs, &P0, &P1, &self.g0, &self.g1)?;
+            let Q0 = AllocatedNum::ternary_add(cs, &y0, &P2, &P3)?;
+
+            let y1 = AllocatedNum::linear_combination_gadget(cs, &P1, &P2, &self.g0, &self.g1)?;
+            let Q1 = AllocatedNum::ternary_add(cs, &y1, &P0, &P3)?;
+
+            let y2 = AllocatedNum::linear_combination_gadget(cs, &P2, &P3, &self.g0, &self.g1)?;
+            let Q2 = AllocatedNum::ternary_add(cs, &y2, &P0, &P1)?;
+
+            let y3 = AllocatedNum::linear_combination_gadget(cs, &P3, &P0, &self.g0, &self.g1)?;
+            let Q3 = AllocatedNum::ternary_add(cs, &y3, &P1, &P2)?;
+
+            column[0] = Q0;
+            column[1] = Q1;
+            column[2] = Q2;
+            column[3] = Q3;
+        }
+
+        Ok(())
 
     }
 
-    AddRoundKey(State,RoundKey);
-    // simle element-wise addition
+    fn AddRoundKey<CS: ConstraintSystem>(
+        &self, cs: &mut CS, state: &mut RijndaelState, key: &RijndaelState, round: usize) -> Result<(), SynthesisError>
+    {
+        // simle element-wise addition
+        let start = round * self.Nb;
+        let end = (round+1) * self.Nb;
+        let round_key = &key[start..end];
 
+        assert_eq!(state.len(), round_key.len());
+        for (x, k) in state.iter_mut().zip(round_key) {
+            *x = x.add(cs, k)?;
+        }
 
+        Ok(())
+    }
 
+    fn KeyShedule<CS: ConstraintSystem>(
+        &self, cs: &mut CS, master_key: &mut RijndaelState) -> Result<RijndaelState, SynthesisError>
+    {
+        // we assume that master_ley is given in compressed form: 
+        // i.e. it is represented as vector of length NK consisting of GF(2^128) elems
+        // we start by decompressing each of them into 16 elements
+        // so we demand Nk to be a multiple of 4 for now
 
+        let mut key : RijndaelState = Vec::with_capacity(self.Nb * (self.Nr+1));
+        assert_eq!(self.Nr % 4, 0);
 
+        for elem in master_key.iter() {
+            let tmp = elem.unpack_128_into_32(cs, &self.s_128_to_32)?;
+            key.extend(tmp.into_iter());
+        }
 
+        for i in self.Nk..self.Nb * (self.Nr + 1) {
+            if (i % self.Nk == 0) || ((self.Nk >= 6) & (i % self.Nk == 4)) {
+                
+                let mut col = key[i-1].unpack_128_into_32(cs, &self.s_32_to_8)?.to_vec();
+                col.rotate_left(1);
+                self.ByteSub(cs, &mut col, true);
 
+                let args = [&col[0], &col[1], &col[2], &col[3]];
+                let mut tmp = AllocatedNum::pack_8_t0_32(cs, args, &self.s_32_to_8)?;
 
-Key schedule 
+                tmp = AllocatedNum::ternary_add(cs, &tmp, &self.R_con, &key[i - self.Nk])?;
+                key.push(tmp);
+            }
+            else {
+                let col = key[i - 1].add(cs, &key[i - self.Nk])?;
+                key.push(col);
+            }
+        }
 
-    pub fn absord()
+        Ok(key)
+    }
 
-    pub fn squeeze()
- 
+    pub fn absord<CS: ConstraintSystem>(&self, cs: &mut CS, elem: AllocatedNum) -> Result<(), SynthesisError> 
+    {
 
+        Ok(())
+    }
+
+    pub fn squeeze<CS: ConstraintSystem>(&self, cs: &mut CS, elem: AllocatedNum) -> Result<AllocatedNum, SynthesisError>
+    {
+
+    }
 }
+
 
