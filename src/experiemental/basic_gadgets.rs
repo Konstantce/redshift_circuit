@@ -1,6 +1,6 @@
 use super::gates::Variable;
 use super::cs::BinaryConstraintSystem as ConstraintSystem;
-use super::binary_field::BinaryField128 as Fr;
+use super::binary_field::BinaryField;
 use super::cs::*;
 use crate::bellman::SynthesisError;
 use crate::bellman::pairing::ff::Field;
@@ -8,13 +8,13 @@ use crate::common::Assignment;
 use arraymap::ArrayMap;
 use rand::Rng;
 
-#[derive(Debug, Copy)]
-pub struct AllocatedNum {
-    value: Option<Fr>,
+#[derive(Debug)]
+pub struct AllocatedNum<E: Engine> {
+    value: Option<E::Fr>,
     variable: Variable
 }
 
-impl Clone for AllocatedNum {
+impl<E: Engine> Clone for AllocatedNum<E> {
     fn clone(&self) -> Self {
         AllocatedNum {
             value: self.value,
@@ -23,14 +23,16 @@ impl Clone for AllocatedNum {
     }
 }
 
+impl<E: Engine> Copy for AllocatedNum<E> {}
 
-impl AllocatedNum {
+
+impl<E: Engine> AllocatedNum<E> {
    
     pub fn alloc<CS, F>(
         cs: &mut CS,
         value: F,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem, F: FnOnce() -> Result<Fr, SynthesisError>
+        where CS: ConstraintSystem<E>, F: FnOnce() -> Result<E::Fr, SynthesisError>
     {
         let mut new_value = None;
         let var = cs.alloc(|| {
@@ -49,7 +51,7 @@ impl AllocatedNum {
         cs: &mut CS,
         value: F,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem, F: FnOnce() -> Result<Fr, SynthesisError>
+        where CS: ConstraintSystem<E>, F: FnOnce() -> Result<E::Fr, SynthesisError>
     {
         let mut new_value = None;
         let var = cs.alloc_input(|| {
@@ -69,9 +71,9 @@ impl AllocatedNum {
     pub fn alloc_random<CS>(
         cs: &mut CS,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
-        let value : Fr = rand::thread_rng().gen();
+        let value : E::Fr = rand::thread_rng().gen();
         let var = cs.alloc(|| {
             Ok(value)
         })?;
@@ -82,7 +84,7 @@ impl AllocatedNum {
         })
     }
 
-    pub fn get_value(&self) -> Option<Fr> {
+    pub fn get_value(&self) -> Option<E::Fr> {
         self.value
     }
 
@@ -95,7 +97,7 @@ impl AllocatedNum {
         cs: &mut CS,
         other: &Self
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -119,7 +121,7 @@ impl AllocatedNum {
         cs: &mut CS,
         other: &Self
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -142,7 +144,7 @@ impl AllocatedNum {
         &self,
         cs: &mut CS
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -166,7 +168,7 @@ impl AllocatedNum {
         &self,
         cs: &mut CS
     ) -> Result<[Self; 2], SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut x2_value = None;
         let mut x4_value = None;
@@ -205,7 +207,7 @@ impl AllocatedNum {
         b: &Self,
         c: &Self,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -229,10 +231,10 @@ impl AllocatedNum {
         cs: &mut CS,
         a: &Self,
         b: &Self,
-        c1: &Fr,
-        c2: &Fr,
+        c1: &E::Fr,
+        c2: &E::Fr,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -260,11 +262,11 @@ impl AllocatedNum {
         a: &Self,
         b: &Self,
         c: &Self,
-        c1: &Fr,
-        c2: &Fr,
-        c3: &Fr,
+        c1: &E::Fr,
+        c2: &E::Fr,
+        c3: &E::Fr,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -299,7 +301,7 @@ impl AllocatedNum {
         a: &Self,
         b: &Self,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
@@ -308,7 +310,7 @@ impl AllocatedNum {
             let a_value = *a.value.get()?;
             let b_value = *b.value.get()?;
 
-            let tmp = match (cond_value == Fr::one(), cond_value == Fr::zero()) {
+            let tmp = match (cond_value == E::Fr::one(), cond_value == E::Fr::zero()) {
                 (true, false) => a_value.clone(),
                 (false, true) => b_value.clone(),
                 (_, _) => unreachable!(),
@@ -331,7 +333,7 @@ impl AllocatedNum {
         cs: &mut CS,
         other: &Self
     ) -> Result<(), SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         
         cs.new_equality_gate(self.get_variable(), other.get_variable())?;
@@ -349,16 +351,16 @@ impl AllocatedNum {
         &self,
         cs: &mut CS,
     ) -> Result<(Self, Self), SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut flag_value = None;
         let mut inv_elem_value = None;
 
         let flag_var = cs.alloc(|| {
             let val = *self.value.get()?;
-            let tmp = match val == Fr::zero() {
-                true => Fr::zero(),
-                false => Fr::one(),
+            let tmp = match val == E::Fr::zero() {
+                true => E::Fr::zero(),
+                false => E::Fr::one(),
             };
 
             flag_value = Some(tmp);
@@ -404,7 +406,7 @@ impl AllocatedNum {
         x: &Self,
         x8: &Self,
     ) -> Result<(), SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         cs.new_equality_gate(x.get_variable(), x8.get_variable())?;
         Ok(())
@@ -421,20 +423,21 @@ impl AllocatedNum {
         &self,
         cs: &mut CS,
         // NB: s can be recalculated on the fly if really needed
-        s: &Fr,
+        s: &E::Fr,
     ) -> Result<[Self; 16], SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         // TODO: we need to change basis first!
         let repr = self.value.map(|e| e.into_byte_repr());
-        let mut values : [Option<Fr>; 16] = [None; 16];
-        let mut allocated_nums: [Option<AllocatedNum>; 16] = [None; 16];
+        let mut values : [Option<E::Fr>; 16] = [None; 16];
+        let mut allocated_nums: [Option<AllocatedNum<E>>; 16] = [None; 16];
         
         for (idx, (alloc_num, value)) in allocated_nums.iter_mut().zip(values.iter_mut()).enumerate() {
             let var = cs.alloc(|| {
-                let repr = repr.get()?;
-                let byte = repr[idx]; 
-                let tmp =  Fr::from_repr([byte as u32, 0, 0, 0]);
+                //let repr = repr.get()?;
+                //let byte = repr[idx]; 
+                //let tmp =  E::Fr::from_repr([byte as u32, 0, 0, 0]);
+                let tmp = E::Fr::zero();
                 
                 // and here we need to return back to initial basis!
                 *value = Some(tmp);
@@ -463,11 +466,12 @@ impl AllocatedNum {
 
         for idx in 0..7 {
             aux_y[idx] = Some(cs.alloc(|| {
-                let mut repr = repr.get()?.clone();
-                for i in slice_length..16 {
-                    repr[i] = 0;
-                } 
-                let tmp =  Fr::from_byte_repr(repr);
+                // let mut repr = repr.get()?.clone();
+                // for i in slice_length..16 {
+                //     repr[i] = 0;
+                // } 
+                // let tmp =  Fr::from_byte_repr(repr);
+                let tmp = E::Fr::zero();
  
                 Ok(tmp)
             })?);
@@ -488,7 +492,7 @@ impl AllocatedNum {
                         allocated_nums[1].unwrap().get_variable(),
                         allocated_nums[2].unwrap().get_variable(),
                         aux_y[0].unwrap(),
-                        Fr::one(),
+                        E::Fr::one(),
                         coef,
                         next_coef,
                     )?;
@@ -499,7 +503,7 @@ impl AllocatedNum {
                         aux_y[6].unwrap(),
                         allocated_nums[15].unwrap().get_variable(),
                         self.get_variable(),
-                        Fr::one(),
+                        E::Fr::one(),
                         coef,
                     )?,
                     
@@ -509,7 +513,7 @@ impl AllocatedNum {
                         allocated_nums[cur_alloc_num_idx].unwrap().get_variable(),
                         allocated_nums[cur_alloc_num_idx + 1].unwrap().get_variable(),
                         aux_y[idx].unwrap(),
-                        Fr::one(),
+                        E::Fr::one(),
                         coef,
                         next_coef,
                     )?;
@@ -532,16 +536,16 @@ impl AllocatedNum {
     pub fn pack_8_t0_128<CS>(
         cs: &mut CS,
         elems: [&Self; 16],
-        s: &Fr,
+        s: &E::Fr,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
         let var = cs.alloc(|| {
 
-            let mut running_sum = Fr::zero();
-            let mut coef = Fr::one();
+            let mut running_sum = E::Fr::zero();
+            let mut coef = E::Fr::one();
 
             for e in elems.iter() {
                 let mut tmp = *e.value.get()?;
@@ -563,11 +567,12 @@ impl AllocatedNum {
 
         for idx in 0..7 {
             aux_y[idx] = Some(cs.alloc(|| {
-                let mut repr = repr.get()?.clone();
-                for i in slice_length..16 {
-                    repr[i] = 0;
-                } 
-                let tmp =  Fr::from_byte_repr(repr);
+                // let mut repr = repr.get()?.clone();
+                // for i in slice_length..16 {
+                //     repr[i] = 0;
+                // } 
+                // let tmp =  Fr::from_byte_repr(repr);
+                let tmp = E::Fr::zero();
  
                 Ok(tmp)
             })?);
@@ -588,7 +593,7 @@ impl AllocatedNum {
                         elems[1].get_variable(),
                         elems[2].get_variable(),
                         aux_y[0].unwrap(),
-                        Fr::one(),
+                        E::Fr::one(),
                         coef,
                         next_coef,
                     )?;
@@ -599,7 +604,7 @@ impl AllocatedNum {
                         aux_y[6].unwrap(),
                         elems[15].get_variable(),
                         var,
-                        Fr::one(),
+                        E::Fr::one(),
                         coef,
                     )?,
                     
@@ -609,7 +614,7 @@ impl AllocatedNum {
                         elems[cur_alloc_num_idx].get_variable(),
                         elems[cur_alloc_num_idx + 1].get_variable(),
                         aux_y[idx].unwrap(),
-                        Fr::one(),
+                        E::Fr::one(),
                         coef,
                         next_coef,
                     )?;
@@ -631,19 +636,19 @@ impl AllocatedNum {
         &self,
         cs: &mut CS,
         // NB: s can be recalculated on the fly if really needed
-        s: &Fr,
+        s: &E::Fr,
     ) -> Result<[Self; 4], SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
-        let mut allocated_nums: [Option<AllocatedNum>; 4] = [None; 4];
+        let mut allocated_nums: [Option<AllocatedNum<E>>; 4] = [None; 4];
         
         for alloc_num in allocated_nums.iter_mut() {
             let var = cs.alloc(|| {
-                Ok(Fr::zero())
+                Ok(E::Fr::zero())
             })?;
             *alloc_num = Some(AllocatedNum {
                 variable: var,
-                value: Some(Fr::zero()),
+                value: Some(E::Fr::zero()),
             });
         }
 
@@ -654,7 +659,7 @@ impl AllocatedNum {
         // x = y + s^3 * x_3
 
         let aux_y = cs.alloc(|| {
-            Ok(Fr::zero())
+            Ok(E::Fr::zero())
         })?;
 
         let s1 = s.clone();
@@ -668,7 +673,7 @@ impl AllocatedNum {
             allocated_nums[1].unwrap().get_variable(),
             allocated_nums[2].unwrap().get_variable(),
             aux_y,
-            Fr::one(),
+            E::Fr::one(),
             s1,
             s2,
         )?;
@@ -677,7 +682,7 @@ impl AllocatedNum {
             aux_y,
             allocated_nums[3].unwrap().get_variable(),
             self.get_variable(),
-            Fr::one(),
+            E::Fr::one(),
             s3,
         )?;
        
@@ -688,16 +693,16 @@ impl AllocatedNum {
     pub fn pack_8_t0_32<CS>(
         cs: &mut CS,
         elems: [&Self; 4],
-        s: &Fr,
+        s: &E::Fr,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
         let var = cs.alloc(|| {
 
-            let mut running_sum = Fr::zero();
-            let mut coef = Fr::one();
+            let mut running_sum = E::Fr::zero();
+            let mut coef = E::Fr::one();
 
             for e in elems.iter() {
                 let mut tmp = *e.value.get()?;
@@ -712,7 +717,7 @@ impl AllocatedNum {
         })?;
 
         let aux_y = cs.alloc(|| {
-            Ok(Fr::zero())
+            Ok(E::Fr::zero())
         })?;
 
         let s1 = s.clone();
@@ -726,7 +731,7 @@ impl AllocatedNum {
             elems[1].get_variable(),
             elems[2].get_variable(),
             aux_y,
-            Fr::one(),
+            E::Fr::one(),
             s1,
             s2,
         )?;
@@ -735,7 +740,7 @@ impl AllocatedNum {
             aux_y,
             elems[3].get_variable(),
             var,
-            Fr::one(),
+            E::Fr::one(),
             s3,
         )?;
        
@@ -749,19 +754,19 @@ impl AllocatedNum {
         &self,
         cs: &mut CS,
         // NB: s can be recalculated on the fly if really needed
-        s: &Fr,
+        s: &E::Fr,
     ) -> Result<[Self; 4], SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
-        let mut allocated_nums: [Option<AllocatedNum>; 4] = [None; 4];
+        let mut allocated_nums: [Option<AllocatedNum<E>>; 4] = [None; 4];
         
         for alloc_num in allocated_nums.iter_mut() {
             let var = cs.alloc(|| {
-                Ok(Fr::zero())
+                Ok(E::Fr::zero())
             })?;
             *alloc_num = Some(AllocatedNum {
                 variable: var,
-                value: Some(Fr::zero()),
+                value: Some(E::Fr::zero()),
             });
         }
 
@@ -772,7 +777,7 @@ impl AllocatedNum {
         // x = y + s^3 * x_3
 
         let aux_y = cs.alloc(|| {
-            Ok(Fr::zero())
+            Ok(E::Fr::zero())
         })?;
 
         let s1 = s.clone();
@@ -786,7 +791,7 @@ impl AllocatedNum {
             allocated_nums[1].unwrap().get_variable(),
             allocated_nums[2].unwrap().get_variable(),
             aux_y,
-            Fr::one(),
+            E::Fr::one(),
             s1,
             s2,
         )?;
@@ -795,7 +800,7 @@ impl AllocatedNum {
             aux_y,
             allocated_nums[3].unwrap().get_variable(),
             self.get_variable(),
-            Fr::one(),
+            E::Fr::one(),
             s3,
         )?;
        
@@ -806,16 +811,16 @@ impl AllocatedNum {
     pub fn pack_32_t0_128<CS>(
         cs: &mut CS,
         elems: [&Self; 4],
-        s: &Fr,
+        s: &E::Fr,
     ) -> Result<Self, SynthesisError>
-        where CS: ConstraintSystem
+        where CS: ConstraintSystem<E>
     {
         let mut value = None;
 
         let var = cs.alloc(|| {
 
-            let mut running_sum = Fr::zero();
-            let mut coef = Fr::one();
+            let mut running_sum = E::Fr::zero();
+            let mut coef = E::Fr::one();
 
             for e in elems.iter() {
                 let mut tmp = *e.value.get()?;
@@ -830,7 +835,7 @@ impl AllocatedNum {
         })?;
 
         let aux_y = cs.alloc(|| {
-            Ok(Fr::zero())
+            Ok(E::Fr::zero())
         })?;
 
         let s1 = s.clone();
@@ -844,7 +849,7 @@ impl AllocatedNum {
             elems[1].get_variable(),
             elems[2].get_variable(),
             aux_y,
-            Fr::one(),
+            E::Fr::one(),
             s1,
             s2,
         )?;
@@ -853,7 +858,7 @@ impl AllocatedNum {
             aux_y,
             elems[3].get_variable(),
             var,
-            Fr::one(),
+            E::Fr::one(),
             s3,
         )?;
        

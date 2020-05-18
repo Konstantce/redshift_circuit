@@ -1,45 +1,60 @@
-use super::binary_field::BinaryField128 as Fr;
+use super::binary_field::*;
 use super::gates::{Gate, Variable};
 
 use crate::bellman::SynthesisError;
 
 
-pub trait BinaryCircuit {
-    fn synthesize<CS: BinaryConstraintSystem>(&self, cs: &mut CS) -> Result<(), SynthesisError>;
+pub trait Engine {
+    type Fr: BinaryField;
+}
+
+pub struct Engine128;
+impl Engine for Engine128 {
+    type Fr = BinaryField128;
+}
+
+pub struct Engine256;
+impl Engine for Engine256 {
+    type Fr = BinaryField256;
 }
 
 
-pub trait BinaryConstraintSystem {
+pub trait BinaryCircuit<E: Engine> {
+    fn synthesize<CS: BinaryConstraintSystem<E>>(&self, cs: &mut CS) -> Result<(), SynthesisError>;
+}
 
-    type Root: BinaryConstraintSystem;
+
+pub trait BinaryConstraintSystem<E: Engine> {
+
+    type Root: BinaryConstraintSystem<E>;
 
     // allocate a variable
     fn alloc<F>(&mut self, value: F) -> Result<Variable, SynthesisError>
     where
-        F: FnOnce() -> Result<Fr, SynthesisError>;
+        F: FnOnce() -> Result<E::Fr, SynthesisError>;
 
     // allocate an input variable
     fn alloc_input<F>(&mut self, value: F) -> Result<Variable, SynthesisError>
     where
-        F: FnOnce() -> Result<Fr, SynthesisError>;
+        F: FnOnce() -> Result<E::Fr, SynthesisError>;
 
-    fn get_value(&self, _variable: Variable) -> Result<Fr, SynthesisError> { 
+    fn get_value(&self, _variable: Variable) -> Result<E::Fr, SynthesisError> { 
         Err(SynthesisError::AssignmentMissing)
     }
   
     fn get_dummy_variable(&self) -> Variable;
 
-    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError>;
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: E::Fr) -> Result<(), SynthesisError>;
     fn new_add_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError>;
     fn new_mul_gate(&mut self, left: Variable, right: Variable, output: Variable) -> Result<(), SynthesisError>;
     fn new_power4_gate(&mut self, x: Variable, x2: Variable, x4: Variable) -> Result<(), SynthesisError>;
     fn new_ternary_addition_gate(
         &mut self, a: Variable, b: Variable, c: Variable, out: Variable) -> Result<(), SynthesisError>;
     fn new_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>;
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: E::Fr, c_2: E::Fr) -> Result<(), SynthesisError>;
     fn new_long_linear_combination_gate(
         &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
-        c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>;
+        c_1: E::Fr, c_2: E::Fr, c_3: E::Fr) -> Result<(), SynthesisError>;
     fn new_selector_gate(&mut self, cond: Variable, a: Variable, b: Variable, out: Variable) -> Result<(), SynthesisError>;
     fn new_equality_gate(&mut self, left: Variable, right: Variable) -> Result<(), SynthesisError>;
 
@@ -60,21 +75,21 @@ pub trait BinaryConstraintSystem {
     fn namespace<'a, NR, N>(
         &'a mut self,
         name_fn: N
-    ) -> Namespace<'a, Self::Root>
+    ) -> Namespace<'a, E, Self::Root>
         where NR: Into<String>, N: FnOnce() -> NR
     {
         self.get_root().push_namespace(name_fn);
 
-        Namespace(self.get_root())
+        Namespace(self.get_root(), std::marker::PhantomData)
     }
 }
 
 
 /// This is a "namespaced" constraint system which borrows a constraint system (pushing
 /// a namespace context) and, when dropped, pops out of the namespace context.
-pub struct Namespace<'a, CS: BinaryConstraintSystem + 'a>(&'a mut CS);
+pub struct Namespace<'a, E: Engine, CS: BinaryConstraintSystem<E> + 'a>(&'a mut CS, std::marker::PhantomData<E>);
 
-impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, CS> {
+impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> for Namespace<'cs, E, CS> {
     
     type Root = CS::Root;
 
@@ -82,7 +97,7 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
         &mut self,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<Fr, SynthesisError>,
+        where F: FnOnce() -> Result<E::Fr, SynthesisError>,
     {
         self.0.alloc(f)
     }
@@ -91,12 +106,12 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
         &mut self,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<Fr, SynthesisError>,
+        where F: FnOnce() -> Result<E::Fr, SynthesisError>,
     {
         self.0.alloc_input(f)
     }
 
-    fn get_value(&self, variable: Variable) -> Result<Fr, SynthesisError> { 
+    fn get_value(&self, variable: Variable) -> Result<E::Fr, SynthesisError> { 
         self.0.get_value(variable)
     }
   
@@ -104,7 +119,7 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
         self.0.get_dummy_variable()
     }
 
-    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: E::Fr) -> Result<(), SynthesisError> {
         self.0.new_enforce_constant_gate(variable, constant)
     }
 
@@ -126,14 +141,14 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
         self.0.new_ternary_addition_gate(a, b, c, out)
     }
     fn new_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: E::Fr, c_2: E::Fr) -> Result<(), SynthesisError>
     {
         self.0.new_linear_combination_gate(a, b, out, c_1, c_2)
     }
 
     fn new_long_linear_combination_gate(
         &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
-        c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>
+        c_1: E::Fr, c_2: E::Fr, c_3: E::Fr) -> Result<(), SynthesisError>
     {
         self.0.new_long_linear_combination_gate(a, b, c, out, c_1, c_2, c_3)
     }
@@ -170,7 +185,7 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for Namespace<'cs, 
 }
 
 
-impl<'a, CS: BinaryConstraintSystem> Drop for Namespace<'a, CS> {
+impl<'a, E: Engine, CS: BinaryConstraintSystem<E>> Drop for Namespace<'a, E, CS> {
     fn drop(&mut self) {
         self.get_root().pop_namespace()
     }
@@ -178,7 +193,7 @@ impl<'a, CS: BinaryConstraintSystem> Drop for Namespace<'a, CS> {
 
 
 /// Convenience implementation of BinaryConstraintSystem for mutable references to constraint systems.
-impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
+impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> for &'cs mut CS {
     
     type Root = CS::Root;
 
@@ -186,7 +201,7 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
         &mut self,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<Fr, SynthesisError>
+        where F: FnOnce() -> Result<E::Fr, SynthesisError>
     {
         (**self).alloc(f)
     }
@@ -195,12 +210,12 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
         &mut self,
         f: F
     ) -> Result<Variable, SynthesisError>
-        where F: FnOnce() -> Result<Fr, SynthesisError>
+        where F: FnOnce() -> Result<E::Fr, SynthesisError>
     {
         (**self).alloc_input(f)
     }
 
-    fn get_value(&self, variable: Variable) -> Result<Fr, SynthesisError> { 
+    fn get_value(&self, variable: Variable) -> Result<E::Fr, SynthesisError> { 
         (**self).get_value(variable)
     }
   
@@ -208,7 +223,7 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
         (**self).get_dummy_variable()
     }
 
-    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: E::Fr) -> Result<(), SynthesisError> {
         (**self).new_enforce_constant_gate(variable, constant)
     }
 
@@ -230,14 +245,14 @@ impl<'cs, CS: BinaryConstraintSystem> BinaryConstraintSystem for &'cs mut CS {
         (**self).new_ternary_addition_gate(a, b, c, out)
     }
     fn new_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError>
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: E::Fr, c_2: E::Fr) -> Result<(), SynthesisError>
     {
         (**self).new_linear_combination_gate(a, b, out, c_1, c_2)
     }
 
     fn new_long_linear_combination_gate(
         &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
-        c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError>
+        c_1: E::Fr, c_2: E::Fr, c_3: E::Fr) -> Result<(), SynthesisError>
     {
         (**self).new_long_linear_combination_gate(a, b, c, out, c_1, c_2, c_3)
     }

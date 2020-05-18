@@ -45,6 +45,25 @@ impl<E: AsRef<[u64]>> Iterator for BitIterator<E> {
 }
 
 
+pub trait BinaryField: Field {
+
+    type Repr;
+    type ByteRepr;
+
+    fn num_bits(&self) -> u32;
+
+    fn capacity(&self) -> u32;
+
+    fn from_repr(repr: Self::Repr) -> Self;
+
+    fn into_repr(&self) -> Self::Repr; 
+
+    fn from_byte_repr(byte_repr: Self::ByteRepr) -> Self; 
+
+    fn into_byte_repr(&self) -> Self::ByteRepr; 
+}
+
+
 #[derive(Debug)]
 pub struct BitView<'a, E> {
     arr: &'a mut E,
@@ -145,16 +164,290 @@ impl ::std::fmt::Display for BinaryField128 {
 
 
 impl BinaryField128 {
+       
+    pub fn write_be<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        use byteorder::{BigEndian, WriteBytesExt};
 
-    pub fn num_bits(&self) -> u32 {
+        for digit in self.repr.as_ref().iter().rev() {
+            writer.write_u32::<BigEndian>(*digit)?;
+        }
+
+        Ok(())
+    }
+
+    /// Reads a big endian integer into this representation.
+    pub fn read_be<R: Read>(&mut self, mut reader: R) -> io::Result<()> {
+        use byteorder::{BigEndian, ReadBytesExt};
+
+        for digit in self.repr.as_mut().iter_mut().rev() {
+            *digit = reader.read_u32::<BigEndian>()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn write_le<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        use byteorder::{LittleEndian, WriteBytesExt};
+
+        for digit in self.repr.as_ref().iter() {
+            writer.write_u32::<LittleEndian>(*digit)?;
+        }
+
+        Ok(())
+    }
+
+    /// Reads a little endian integer into this representation.
+    pub fn read_le<R: Read>(&mut self, mut reader: R) -> io::Result<()> {
+        use byteorder::{LittleEndian, ReadBytesExt};
+
+        for digit in self.repr.as_mut().iter_mut() {
+            *digit = reader.read_u32::<LittleEndian>()?;
+        }
+
+        Ok(())
+    }
+}
+
+
+impl BinaryField for BinaryField128 {
+
+    type Repr = [u32; 4];
+    type ByteRepr = [u8; 16];
+
+    fn num_bits(&self) -> u32 {
         128
     }
 
-    pub fn capacity(&self) -> u32 {
+    fn capacity(&self) -> u32 {
         128
     }
 
-    /// Writes this `PrimeFieldRepr` as a big endian integer.
+    fn from_repr(repr: [u32; 4]) -> Self {
+        Self { repr }
+    }
+
+    fn into_repr(&self) -> [u32; 4] {
+        self.repr.clone()
+    }
+
+    fn from_byte_repr(byte_repr: [u8; 16]) -> Self {
+        let mut repr : [u32; 4] = [0; 4];
+        for (input, output) in byte_repr.chunks(4).zip(repr.iter_mut()) {
+            let mut temp : [u8; 4] = [0; 4];
+            
+            // it's Rust, and is is far from being perfect
+            for (x, y) in input.iter().zip(temp.iter_mut()) {
+                *y = *x;
+            }
+
+            *output = unsafe { 
+                std::mem::transmute::<[u8; 4], u32>(temp) 
+            }.to_le()
+        }
+        Self {repr}
+    }
+
+    fn into_byte_repr(&self) -> [u8; 16] {
+        let mut byte_repr : [u8; 16] = [0; 16];
+        for (input, output) in self.repr.iter().zip(byte_repr.chunks_mut(4)) {
+            let temp = unsafe { 
+                std::mem::transmute::<u32, [u8; 4]>(input.to_le()) 
+            };
+            output.clone_from_slice(&temp);
+        }
+        byte_repr
+    }
+}
+
+
+unsafe fn add_ptr_len(
+    dst: *mut u64,
+    src: *const u64,
+    num_limbs: usize
+) {
+    for i in 0..num_limbs {
+        let dst_ptr = dst.offset(i as isize);
+        let src_ptr = src.offset(i as isize);
+        *dst_ptr ^= *src_ptr;
+    }
+}
+
+
+impl Field for BinaryField128 {
+
+    fn zero() -> Self {
+        Self { repr : [0, 0, 0, 0]}
+    }
+
+    fn one() -> Self {
+        Self { repr : [1, 0, 0, 0]}
+    }
+
+    /// Returns true iff this element is zero.
+    fn is_zero(&self) -> bool {
+        self.repr.iter().all(|x| *x == 0)
+    }
+
+    /// Squares this element.
+    fn square(&mut self) {
+        let temp = self.clone();
+        self.mul_assign(&temp);
+    }
+
+    /// Doubles this element.
+    fn double(&mut self) {
+        let temp = self.clone();
+        self.add_assign(&temp);
+    }
+
+    /// Negates this element.
+    fn negate(&mut self) {
+        //do nothing
+    }
+
+    /// Adds another element to this element.
+    fn add_assign(&mut self, other: &Self) {
+        for (a, b) in self.repr.iter_mut().zip(other.repr.iter()) {
+            *a ^= b;
+        }
+    }
+
+    /// Subtracts another element from this element.
+    fn sub_assign(&mut self, other: &Self) {
+        self.add_assign(other)
+    }
+
+    /// Multiplies another element by this element.
+    fn mul_assign(&mut self, other: &Self) {
+
+        if self.is_zero() || other.is_zero()
+        {
+            *self = Self::zero();
+            return;
+        }
+
+        // we are working in standard polynomial basis
+        let mut raw_res = [0u32; 8];
+        let left = BigUint::from_slice(&self.repr[..]);
+        let right = BigUint::from_slice(&other.repr[..]);
+        let int_res = left * right;
+        let res_bytes = int_res.to_bytes_le();
+
+        for (output, input) in raw_res.iter_mut().zip(res_bytes.chunks(4))
+        {
+            *output = input[0] as u32 + ((input[1] as u32) << 8) + ((input[2] as u32) << 16) + ((input[3] as u32) << 24);
+        }
+
+        {
+            // recall that out generator polynomial is f(x)=x^{128}+x^{77}+x^{35}+x^{11}+1
+            // corresponding distance betrween nearby indexes are 128 - 77 = 51, 77-35=42, 35-11=24, 11-1=10
+
+            let mut bit_view = BitView::new(&mut raw_res);
+            let mut high_bit_pos = bit_view.next_one_pos().unwrap();
+
+            while high_bit_pos >= 128 {
+                let mut cur_pos = high_bit_pos;
+                bit_view.toggle_bit_at_pos(cur_pos);
+
+                for diff in [51usize, 42usize, 24usize, 10usize].iter() {
+                    cur_pos -= diff;
+                    bit_view.toggle_bit_at_pos(cur_pos);
+                }
+
+                high_bit_pos = bit_view.next_one_pos().unwrap();
+            }
+        }
+        
+        self.repr.copy_from_slice(&raw_res[0..4]);
+    }
+
+    /// Exponentiates this element by a power of the base prime modulus via
+    /// the Frobenius automorphism.
+    fn frobenius_map(&mut self, power: usize) {
+        unimplemented!();
+    }
+
+    /// Computes the multiplicative inverse of this element, if nonzero.
+    fn inverse(&self) -> Option<Self> {
+        let res = match self.is_zero() {
+            true => None,
+            false => {
+                // cardinality of multiplicative subgroup is 2^n - 1 
+                // to get inverse of alpha raise to 2^n - 2
+                
+                let exp = [0xfffffffffffffffd, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff];
+                Some(self.pow(&exp))
+            },
+        };
+
+        res
+    }
+
+    /// Exponentiates this element by a number represented with `u64` limbs,
+    /// least significant digit first.
+    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+        let mut res = Self::one();
+
+        let mut found_one = false;
+
+        for i in BitIterator::new(exp) {
+            if found_one {
+                res.square();
+            } else {
+                found_one = i;
+            }
+
+            if i {
+                res.mul_assign(self);
+            }
+        }
+
+        res
+    }
+}
+
+
+// Galois field(2^256) with generator poly f(x)=x^{256}+x^{241}+x^{178}+x^{121}+1
+#[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
+pub struct BinaryField256
+{
+    repr: [u32; 8],
+}
+
+
+impl ::std::fmt::Debug for BinaryField256
+{
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "0x")?;
+        for i in self.repr.iter().rev() {
+            write!(f, "{:016x}", *i)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl ::rand::Rand for BinaryField256 {
+    #[inline(always)]
+    fn rand<R: ::rand::Rng>(rng: &mut R) -> Self {
+        BinaryField256{ repr: rng.gen()}
+    }
+}
+
+impl ::std::fmt::Display for BinaryField256 {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "0b")?;
+        for i in self.repr.iter().rev() {
+            write!(f, "{:032b}", *i)?;
+        }
+
+        Ok(())
+    }
+}
+
+
+impl BinaryField256 {
+
     pub fn write_be<W: Write>(&self, mut writer: W) -> io::Result<()> {
         use byteorder::{BigEndian, WriteBytesExt};
 
@@ -197,17 +490,31 @@ impl BinaryField128 {
 
         Ok(())
     }
-  
-    pub fn from_repr(repr: [u32; 4]) -> Self {
+}
+
+
+impl BinaryField for BinaryField256 {
+    type Repr = [u32; 8];
+    type ByteRepr = [u8; 32];
+
+    fn num_bits(&self) -> u32 {
+        256
+    }
+
+    fn capacity(&self) -> u32 {
+        256
+    }
+
+    fn from_repr(repr: [u32; 8]) -> Self {
         Self { repr }
     }
 
-    pub fn into_repr(&self) -> [u32; 4] {
+    fn into_repr(&self) -> [u32; 8] {
         self.repr.clone()
     }
 
-    pub fn from_byte_repr(byte_repr: [u8; 16]) -> Self {
-        let mut repr : [u32; 4] = [0; 4];
+    fn from_byte_repr(byte_repr: [u8; 32]) -> Self {
+        let mut repr : [u32; 8] = [0; 8];
         for (input, output) in byte_repr.chunks(4).zip(repr.iter_mut()) {
             let mut temp : [u8; 4] = [0; 4];
             
@@ -223,8 +530,8 @@ impl BinaryField128 {
         Self {repr}
     }
 
-    pub fn into_byte_repr(&self) -> [u8; 16] {
-        let mut byte_repr : [u8; 16] = [0; 16];
+    fn into_byte_repr(&self) -> [u8; 32] {
+        let mut byte_repr : [u8; 32] = [0; 32];
         for (input, output) in self.repr.iter().zip(byte_repr.chunks_mut(4)) {
             let temp = unsafe { 
                 std::mem::transmute::<u32, [u8; 4]>(input.to_le()) 
@@ -236,27 +543,14 @@ impl BinaryField128 {
 }
 
 
-unsafe fn add_ptr_len(
-    dst: *mut u64,
-    src: *const u64,
-    num_limbs: usize
-) {
-    for i in 0..num_limbs {
-        let dst_ptr = dst.offset(i as isize);
-        let src_ptr = src.offset(i as isize);
-        *dst_ptr ^= *src_ptr;
-    }
-}
-
-
-impl Field for BinaryField128 {
+impl Field for BinaryField256 {
 
     fn zero() -> Self {
-        Self { repr : [0, 0, 0, 0]}
+        Self { repr : [0, 0, 0, 0, 0, 0, 0, 0]}
     }
 
     fn one() -> Self {
-        Self { repr : [1, 0, 0, 0]}
+        Self { repr : [1, 0, 0, 0, 0, 0, 0, 0]}
     }
 
     /// Returns true iff this element is zero.

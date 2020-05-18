@@ -4,20 +4,20 @@ use std::marker::PhantomData;
 
 use super::cs::*;
 use super::gates::*;
-use super::binary_field::BinaryField128 as Fr;
+use super::binary_field::BinaryField;
 
 
-pub struct TestAssembly {
+pub struct TestAssembly<E: Engine> {
     m: usize,
     n: usize,
-    input_gates: Vec<Gate>,
-    aux_gates: Vec<Gate>,
+    input_gates: Vec<Gate<E::Fr>>,
+    aux_gates: Vec<Gate<E::Fr>>,
 
     num_inputs: usize,
     num_aux: usize,
 
-    input_assingments: Vec<Fr>,
-    aux_assingments: Vec<Fr>,
+    input_assingments: Vec<E::Fr>,
+    aux_assingments: Vec<E::Fr>,
     is_finalized: bool,
 
     constraints_per_namespace: Vec<(String, usize)>,
@@ -25,14 +25,14 @@ pub struct TestAssembly {
 }
 
 
-impl BinaryConstraintSystem for TestAssembly {
+impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
 
     type Root = Self;
 
     // allocate a variable
     fn alloc<F>(&mut self, value: F) -> Result<Variable, SynthesisError>
     where
-        F: FnOnce() -> Result<Fr, SynthesisError> 
+        F: FnOnce() -> Result<E::Fr, SynthesisError> 
     {
         let value = value()?;
 
@@ -48,7 +48,7 @@ impl BinaryConstraintSystem for TestAssembly {
     // allocate an input variable
     fn alloc_input<F>(&mut self, value: F) -> Result<Variable, SynthesisError>
     where
-        F: FnOnce() -> Result<Fr, SynthesisError> 
+        F: FnOnce() -> Result<E::Fr, SynthesisError> 
     {
         let value = value()?;
 
@@ -65,10 +65,10 @@ impl BinaryConstraintSystem for TestAssembly {
 
     }
 
-    fn get_value(&self, var: Variable) -> Result<Fr, SynthesisError> {
+    fn get_value(&self, var: Variable) -> Result<E::Fr, SynthesisError> {
         let value = match var {
             Variable(Index::Aux(0)) => {
-                Fr::zero()
+                E::Fr::zero()
                 // return Err(SynthesisError::AssignmentMissing);
             }
             Variable(Index::Input(0)) => {
@@ -89,7 +89,7 @@ impl BinaryConstraintSystem for TestAssembly {
         self.dummy_variable()
     }
 
-    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: Fr) -> Result<(), SynthesisError> {
+    fn new_enforce_constant_gate(&mut self, variable: Variable, constant: E::Fr) -> Result<(), SynthesisError> {
 
         let gate = Gate::new_enforce_constant_gate(variable, constant);
         self.aux_gates.push(gate);
@@ -141,7 +141,7 @@ impl BinaryConstraintSystem for TestAssembly {
     }
 
     fn new_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, out: Variable, c_1: Fr, c_2: Fr) -> Result<(), SynthesisError> 
+        &mut self, a: Variable, b: Variable, out: Variable, c_1: E::Fr, c_2: E::Fr) -> Result<(), SynthesisError> 
     {
         let gate = Gate::new_linear_combination_gate(a, b, out, Coeff::Full(c_1), Coeff::Full(c_2));
         self.aux_gates.push(gate);
@@ -152,9 +152,11 @@ impl BinaryConstraintSystem for TestAssembly {
     }
 
     fn new_long_linear_combination_gate(
-        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, c_1: Fr, c_2: Fr, c_3: Fr) -> Result<(), SynthesisError> 
+        &mut self, a: Variable, b: Variable, c: Variable, out: Variable, 
+        c_1: E::Fr, c_2: E::Fr, c_3: E::Fr) -> Result<(), SynthesisError> 
     {
-        let gate = Gate::new_long_linear_combination_gate(a, b, c, out, Coeff::Full(c_1), Coeff::Full(c_2), Coeff::Full(c_3));
+        let gate = Gate::new_long_linear_combination_gate(
+            a, b, c, out, Coeff::Full(c_1), Coeff::Full(c_2), Coeff::Full(c_3));
         self.aux_gates.push(gate);
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
@@ -203,7 +205,7 @@ impl BinaryConstraintSystem for TestAssembly {
 }
 
 
-impl TestAssembly {
+impl<E: Engine> TestAssembly<E> {
     pub fn new() -> Self {
         let tmp = Self {
             n: 0,
@@ -399,8 +401,8 @@ impl TestAssembly {
                     let b = self.get_value(var_arr[2]).expect("must get a variable value");
                     let out = self.get_value(var_arr[3]).expect("must get a variable value");
 
-                    let zero = Fr::zero();
-                    let one = Fr::one();
+                    let zero = E::Fr::zero();
+                    let one = E::Fr::one();
 
                     if (cond != zero) && (cond != one) {
                         println!("Condition is not boolean at Selector Gate gate nom. {}", i+1);
@@ -449,5 +451,9 @@ impl TestAssembly {
 
     pub fn num_gates(&self) -> usize {
         self.input_gates.len() + self.aux_gates.len()
+    }
+
+    pub fn print_statistics(&self) {
+        println!("Total number of constraints:", i+1);
     }
 }

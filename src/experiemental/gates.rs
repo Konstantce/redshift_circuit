@@ -1,16 +1,18 @@
-use super::binary_field::BinaryField128 as Fr;
+use super::binary_field::BinaryField;
 use std::ops::Neg;
 use crate::bellman::pairing::ff::Field;
 
+use enum_map::Enum;
 
-pub enum Coeff {
+
+pub enum Coeff<Fr: BinaryField> {
     Zero,
     One,
     NegativeOne,
     Full(Fr),
 }
 
-impl std::fmt::Debug for Coeff {
+impl<Fr: BinaryField> std::fmt::Debug for Coeff<Fr> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Coeff::Zero => {
@@ -29,7 +31,7 @@ impl std::fmt::Debug for Coeff {
     }
 }
 
-impl Coeff {
+impl<Fr: BinaryField> Coeff<Fr> {
     pub fn multiply(&self, with: &mut Fr) {
         match self {
             Coeff::Zero => {
@@ -81,15 +83,15 @@ impl Coeff {
     }
 }
 
-impl Copy for Coeff {}
-impl Clone for Coeff {
+impl<Fr: BinaryField> Copy for Coeff<Fr> {}
+impl<Fr: BinaryField> Clone for Coeff<Fr> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl Neg for Coeff {
-    type Output = Coeff;
+impl<Fr: BinaryField> Neg for Coeff<Fr> {
+    type Output = Coeff<Fr>;
 
     fn neg(self) -> Self {
         match self {
@@ -131,7 +133,22 @@ pub enum Index {
     Aux(usize)
 }
 
-pub enum Gate {
+/// used for statistics
+#[derive(Enum)]
+pub enum GateType {
+    EmptyGate,
+    ConstantGate,
+    AddGate,
+    MulGate,
+    Power4Gate,
+    TernaryAdditionGate,
+    LinearCombinationGate,
+    LongLinearCombinationGate,
+    SelectorGate,
+    EqualityGate,
+}
+
+pub enum Gate<Fr: BinaryField> {
     
     EmptyGate,
 
@@ -151,10 +168,10 @@ pub enum Gate {
     TernaryAdditionGate([Variable; 4]),
     
     // out = c_1 * a + c_2 * b
-    LinearCombinationGate([Variable; 3], [Coeff; 2]),
+    LinearCombinationGate([Variable; 3], [Coeff<Fr>; 2]),
 
     // out = c_1 * a + c_2 * b + c_3 * c
-    LongLinearCombinationGate([Variable; 4], [Coeff; 3]),
+    LongLinearCombinationGate([Variable; 4], [Coeff<Fr>; 3]),
     
     /// Takes two allocated numbers (a, b) and returns
     /// a if the condition is true, and otherwise.
@@ -175,7 +192,7 @@ pub enum Gate {
 // if X != 0 then R = 1 and I = X^{-1}
 
 
-impl Gate {
+impl<Fr: BinaryField> Gate<Fr> {
     pub(crate) fn new_empty_gate() -> Self {
         Self::EmptyGate
     }
@@ -200,12 +217,15 @@ impl Gate {
         Self::TernaryAdditionGate([a, b, c, out])
     }
 
-    pub(crate) fn new_linear_combination_gate(a: Variable, b: Variable, out: Variable, c_1: Coeff, c_2: Coeff) -> Self {
+    pub(crate) fn new_linear_combination_gate(
+        a: Variable, b: Variable, out: Variable, c_1: Coeff<Fr>, c_2: Coeff<Fr>) -> Self 
+    {
         Self::LinearCombinationGate([a, b, out], [c_1, c_2])
     }
 
     pub(crate) fn new_long_linear_combination_gate(
-        a: Variable, b: Variable, c: Variable, out: Variable, c_1: Coeff, c_2: Coeff, c_3: Coeff) -> Self {
+        a: Variable, b: Variable, c: Variable, out: Variable, c_1: Coeff<Fr>, c_2: Coeff<Fr>, c_3: Coeff<Fr>) -> Self 
+    {
         Self::LongLinearCombinationGate([a, b, c, out], [c_1, c_2, c_3])
     }
 
@@ -215,5 +235,23 @@ impl Gate {
 
     pub(crate) fn new_equality_gate(left: Variable, right: Variable) -> Self {
         Self::EqualityGate([left, right])
+    }
+
+    pub(crate) fn gate_type(&self) -> GateType {
+        let res = match self {
+            Gate::EmptyGate => GateType::EmptyGate,
+            Gate::ConstantGate(_, _) => GateType::ConstantGate,
+            Gate::AddGate(_) => GateType::AddGate,
+            Gate::MulGate(_) => GateType::MulGate,
+            Gate::Power4Gate(_) => GateType::Power4Gate,
+            Gate::TernaryAdditionGate(_) => GateType::TernaryAdditionGate,
+            Gate::LinearCombinationGate(_, _) => GateType::LinearCombinationGate,
+            Gate::LongLinearCombinationGate(_, _) => GateType::LongLinearCombinationGate,
+            Gate::SelectorGate(_) => GateType::SelectorGate,
+            Gate::EqualityGate(_) => GateType::EqualityGate,
+            _ => unreachable!(),
+        };
+
+        res
     }
 }
