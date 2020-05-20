@@ -420,7 +420,7 @@ impl<Fr: BinaryField> Gate<Fr> {
         Self::MixColumnGate([OUT, P0, P1, P2, P3])
     }
 
-    pub(crate) fn new_add_undate_round_key_gate(
+    pub(crate) fn new_add_update_round_key_gate(
         P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable) -> Self {
         
         Self::RoundKeyAddUpdateGate([P_old, P_new, K_old, K_new, temp])
@@ -431,28 +431,30 @@ impl<Fr: BinaryField> Gate<Fr> {
         Self::ComposeWideGate([P, P0, P1, P2, P3])
     }
 
-    pub(crate) fn new_compose_wide_gate(P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable) -> Self {
-        Self::ComposeWideGate([P, P0, P1, P2, P3])
+    pub(crate) fn new_sub_byte_wide_gate(
+        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
+        y4: Variable, y16: Variable, y64: Variable, out: Variable,
+    ) -> Self {
+        Self::SubByteWideGate([x, x_inv, flag, y, y4, y16, y64, out])
     }
-    
 
-    // for width8 we may actually compose InvSelect and SubBytes in one row
-    // the state will be then (x, x_inv, flag, out, out^4, out^16, out^64, res_sum)
-    SubByteWideGate([Variable; 8]),
+    pub(crate) fn new_mix_columns_wide_gate(
+        OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Self {
+        Self::MixColumnsWideGate([OUT, P0, P1, P2, P3])
+    }
 
-    MixColumnsWideGate([Variable; 5]),
+    pub(crate) fn new_round_add_update_wide_gate(
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
+    ) -> Self {
+        Self::RoundKeyAddUpdateWideGate([P_old, Q_old, K_old, P_new, Q_new, K_new, temp])
+    }
 
-    // for HiroseSheme the key is th same for both "subciphers"
-    // so we may simultaneouly multiple P and Q by the same round key and update the key
-    // the state is [P_old, Q_old, K_old, P_new, Q_new, temp, K_new]
-    RoundKeyAddUpdateWideGate([Variable; 7]),
-
-    // in the final key addition there is no need to update the key:
-    // we assume that all variables in the final key addition are composed back 10 128-bit width
-    // [L, R] is the "state" of Hirose constuction (Left and Right)
-    // the state is : [P, Q, L_old, R_old, K, L_new, R_new]
-    //the transition function are actually the following: 
-    // L_new = L_old + P + K
-    // R_new = R_old + Q + K
-    FinalHashUpdateWideGate([Variable; 7]),
+    pub(crate) fn new_final_hash_update_wide_gate(
+        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
+        K: Variable, L_new: Variable, R_new: Variable,
+    ) -> Self {
+        Self::FinalHashUpdateWideGate([P, Q, L_old, R_old, K, L_new, R_new])
+    }
 }
