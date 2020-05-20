@@ -205,6 +205,48 @@ pub enum Gate<Fr: BinaryField> {
 
     /// asserts a = b 
     EqualityGate([Variable; 2]),
+
+    // Used in more optimized version of constraint system (of width 4)
+    // let call it CS version 2
+
+    //uses out from previous step
+    // arguments are [P, P0, P1, P2, P3]
+    // we use P from previous step
+    // this gadget asserts that
+    // P = c0 * P0 + c1 * P1 + c2 * P2 + c3 * P3
+    // for some predefined constants [c0, c1, c3, c3]
+    DecomposeGadget([Variable; 5], [Coeff<Fr>; 4]),
+
+    // inverse to the previous operation: 
+    // arguments are the same: [P, P0, P1, P2, P3] as well as the asserion check
+    // however, this time we assume that P3 is defined on the previous step
+    ComposeGagdet([Variable; 5], [Coeff<Fr>; 4]),
+
+    // InvSelect gadget: returns x^{-1} if x is invertible or zero instead
+    // for width four the state is (x, x_inv, flag, out)
+    // the transition functions on this row are: 
+    // x_inv * x = flag
+    // x * flag = X
+    // out = x_inv * flag + x * (1 - flag)
+    InvSelectorGadget([Variable; 4]),
+
+    // used for SubBytes : uses x from previous state (it's the first argument)
+    // current state is (y1, y2, 23, out)
+    // the transition functions are: 
+    // y1 = x^4, y2 = y1^4=x^16, y2 = y1^4 = x^64, 
+    // subfield check: x = y2^4 = x^256
+    // out = \sum c_i x^{2^i}, for i \in [0, 7]
+    SubBytesGagdet([Variable; 4]),
+
+    // MixClolumnGadget: arguments are [OUT, P0, P1, P2, P3]
+    // as in composeGadget we assume that P3 was defined on previous row
+    // this gadget does simultaneous matrix multiplicatin   
+    // [Q0, Q1, Q2, Q3]^(T)  = M * [P0, P1, P2, P3] ^ (T)
+    // and composition: OUT = Q = Q0 * + Q1 * s + Q2 * s^2 + Q3 * s^3  
+    // so it reduces to some linear combination of P0, P1, P2, P3
+    
+
+
 }
 
 // We also need inversion in Field which is implemented using  the following PAIR of MUL gates:

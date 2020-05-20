@@ -678,13 +678,13 @@ impl<E: Engine> AllocatedNum<E> {
             s2,
         )?;
 
-        cs.new_linear_combination_gate(
-            aux_y,
-            allocated_nums[3].unwrap().get_variable(),
-            self.get_variable(),
-            E::Fr::one(),
-            s3,
-        )?;
+        // cs.new_linear_combination_gate(
+        //     aux_y,
+        //     allocated_nums[3].unwrap().get_variable(),
+        //     self.get_variable(),
+        //     E::Fr::one(),
+        //     s3,
+        // )?;
        
         let unwrapped = allocated_nums.map(|x| x.unwrap());
         Ok(unwrapped)
@@ -736,13 +736,13 @@ impl<E: Engine> AllocatedNum<E> {
             s2,
         )?;
 
-        cs.new_linear_combination_gate(
-            aux_y,
-            elems[3].get_variable(),
-            var,
-            E::Fr::one(),
-            s3,
-        )?;
+        // cs.new_linear_combination_gate(
+        //     aux_y,
+        //     elems[3].get_variable(),
+        //     var,
+        //     E::Fr::one(),
+        //     s3,
+        // )?;
        
         Ok(AllocatedNum {
             value,
@@ -796,13 +796,13 @@ impl<E: Engine> AllocatedNum<E> {
             s2,
         )?;
 
-        cs.new_linear_combination_gate(
-            aux_y,
-            allocated_nums[3].unwrap().get_variable(),
-            self.get_variable(),
-            E::Fr::one(),
-            s3,
-        )?;
+        // cs.new_linear_combination_gate(
+        //     aux_y,
+        //     allocated_nums[3].unwrap().get_variable(),
+        //     self.get_variable(),
+        //     E::Fr::one(),
+        //     s3,
+        // )?;
        
         let unwrapped = allocated_nums.map(|x| x.unwrap());
         Ok(unwrapped)
@@ -854,13 +854,13 @@ impl<E: Engine> AllocatedNum<E> {
             s2,
         )?;
 
-        cs.new_linear_combination_gate(
-            aux_y,
-            elems[3].get_variable(),
-            var,
-            E::Fr::one(),
-            s3,
-        )?;
+        // cs.new_linear_combination_gate(
+        //     aux_y,
+        //     elems[3].get_variable(),
+        //     var,
+        //     E::Fr::one(),
+        //     s3,
+        // )?;
        
         Ok(AllocatedNum {
             value,

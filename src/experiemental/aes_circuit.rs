@@ -97,8 +97,8 @@ impl<E: Engine> RijndaelGadget<E> {
 
             // if x was initially zero we should left it unchanged, else inverse
 
-            let (zero_flag, elem_inv) = elem.extended_inv_gadget(cs)?;
-            let x = AllocatedNum::selector_gadget(cs, &zero_flag, elem, &elem_inv)?;
+            // let (zero_flag, elem_inv) = elem.extended_inv_gadget(cs)?;
+            // let x = AllocatedNum::selector_gadget(cs, &zero_flag, elem, &elem_inv)?;
 
             // The full SubBytes S-box is defined according to x → M ·x^{−1}+b, 
             // where M \in F_2[8; 8] and b \in F_2[8; 1] are constants
@@ -110,14 +110,14 @@ impl<E: Engine> RijndaelGadget<E> {
             // Linearized polynomials are polymomials in GF(2^8) of the form:
             // C(x) = \sum c_i x^{2^i}, where i \in (0..8), and c_i - are constants (depending on T)
 
-            let [x1, x2] = x.pow4(cs)?;
-            let [x3, x4] = x2.pow4(cs)?;
-            let [x5, x6] = x4.pow4(cs)?;
-            let [x7, x8] = x6.pow4(cs)?;
+            //let [x1, x2] = x.pow4(cs)?;
+            //let [x3, x4] = x2.pow4(cs)?;
+            //let [x5, x6] = x4.pow4(cs)?;
+            //let [x7, x8] = x6.pow4(cs)?;
 
-            if subfield_check {
-                AllocatedNum::check_subfield_gadget(cs, &x, &x8)?;
-            }
+            // if subfield_check {
+            //     AllocatedNum::check_subfield_gadget(cs, &x, &x)?;
+            // }
 
             // y0 = c_0 * x + c_1 * x1 + c_2 * x2
             // y1 = y0 + c_3 *x3 + c_4 * x4
@@ -127,10 +127,10 @@ impl<E: Engine> RijndaelGadget<E> {
             let cc = &self.byte_sub_constants;
             let one = E::Fr::one();
 
-            let y0 = AllocatedNum::long_linear_combination_gadget(cs, &x, &x1, &x2, &cc[0], &cc[1], &cc[2])?;
-            let y1 = AllocatedNum::long_linear_combination_gadget(cs, &y0, &x3, &x4, &one, &cc[3], &cc[4])?;
-            let y2 = AllocatedNum::long_linear_combination_gadget(cs, &y1, &x5, &x6, &one, &cc[5], &cc[6])?;
-            let y3 = AllocatedNum::linear_combination_gadget(cs, &y2, &x7, &one, &cc[7])?;
+            // //let y0 = AllocatedNum::long_linear_combination_gadget(cs, &x, &x1, &x2, &cc[0], &cc[1], &cc[2])?;
+            // //let y1 = AllocatedNum::long_linear_combination_gadget(cs, &y0, &x3, &x4, &one, &cc[3], &cc[4])?;
+            let y2 = AllocatedNum::long_linear_combination_gadget(cs, &elem, &elem, &elem, &one, &cc[5], &cc[6])?;
+            let y3 = AllocatedNum::linear_combination_gadget(cs, &elem, &elem, &one, &cc[7])?;
 
             *elem = y3;
         }
@@ -162,17 +162,17 @@ impl<E: Engine> RijndaelGadget<E> {
             let P2 = column[2];
             let P3 = column[3];
 
-            let y0 = AllocatedNum::linear_combination_gadget(cs, &P0, &P1, &self.g0, &self.g1)?;
-            let Q0 = AllocatedNum::ternary_add(cs, &y0, &P2, &P3)?;
+            //let y0 = AllocatedNum::linear_combination_gadget(cs, &P0, &P1, &self.g0, &self.g1)?;
+            let Q0 = AllocatedNum::ternary_add(cs, &P0, &P2, &P3)?;
 
-            let y1 = AllocatedNum::linear_combination_gadget(cs, &P1, &P2, &self.g0, &self.g1)?;
-            let Q1 = AllocatedNum::ternary_add(cs, &y1, &P0, &P3)?;
+            //let y1 = AllocatedNum::linear_combination_gadget(cs, &P1, &P2, &self.g0, &self.g1)?;
+            let Q1 = AllocatedNum::ternary_add(cs, &P1, &P0, &P3)?;
 
-            let y2 = AllocatedNum::linear_combination_gadget(cs, &P2, &P3, &self.g0, &self.g1)?;
-            let Q2 = AllocatedNum::ternary_add(cs, &y2, &P0, &P1)?;
+            //let y2 = AllocatedNum::linear_combination_gadget(cs, &P2, &P3, &self.g0, &self.g1)?;
+            let Q2 = AllocatedNum::ternary_add(cs, &P2, &P0, &P1)?;
 
-            let y3 = AllocatedNum::linear_combination_gadget(cs, &P3, &P0, &self.g0, &self.g1)?;
-            let Q3 = AllocatedNum::ternary_add(cs, &y3, &P1, &P2)?;
+            //let y3 = AllocatedNum::linear_combination_gadget(cs, &P3, &P0, &self.g0, &self.g1)?;
+            let Q3 = AllocatedNum::ternary_add(cs, &P3, &P1, &P2)?;
 
             column[0] = Q0;
             column[1] = Q1;
@@ -201,7 +201,7 @@ impl<E: Engine> RijndaelGadget<E> {
     }
 
     fn KeyShedule<CS: ConstraintSystem<E>>(
-        &self, cs: &mut CS, master_key: &mut RijndaelState<E>) -> Result<RijndaelState<E>, SynthesisError>
+        &self, cs: &mut CS, master_key: &AllocatedNum<E>) -> Result<RijndaelState<E>, SynthesisError>
     {
         // we assume that master_ley is given in compressed form: 
         // i.e. it is represented as vector of length NK consisting of GF(2^128) elems
@@ -209,9 +209,9 @@ impl<E: Engine> RijndaelGadget<E> {
         // so we demand Nk to be a multiple of 4 for now
 
         let mut key : RijndaelState<E> = Vec::with_capacity(self.Nb * (self.Nr+1));
-        assert_eq!(self.Nr % 4, 0);
+        assert_eq!(self.Nk % 4, 0);
 
-        for elem in master_key.iter() {
+        for elem in [&master_key].iter() {
             let tmp = elem.unpack_128_into_32(cs, &self.s_128_to_32)?;
             key.extend(tmp.into_iter());
         }
@@ -226,28 +226,132 @@ impl<E: Engine> RijndaelGadget<E> {
                 let args = [&col[0], &col[1], &col[2], &col[3]];
                 let mut tmp = AllocatedNum::pack_8_t0_32(cs, args, &self.s_32_to_8)?;
 
-                tmp = AllocatedNum::ternary_add(cs, &tmp, &self.R_con, &key[i - self.Nk])?;
+                //tmp = AllocatedNum::ternary_add(cs, &tmp, &self.R_con, &key[i - self.Nk])?;
                 key.push(tmp);
             }
             else {
-                let col = key[i - 1].add(cs, &key[i - self.Nk])?;
-                key.push(col);
+                //let col = key[i - 1].add(cs, &key[i - self.Nk])?;
+                key.push(key[i-1]);
             }
         }
 
         Ok(key)
     }
 
-    pub fn absord<CS: ConstraintSystem<E>>(&self, cs: &mut CS, elem: AllocatedNum<E>) -> Result<(), SynthesisError> 
+    pub fn absord<CS: ConstraintSystem<E>>(&mut self, cs: &mut CS, elem: AllocatedNum<E>) -> Result<(), SynthesisError> 
     {
+        //treat elem as a master key and expand it
+        let key = {
+            let mut key_shedule_cs = cs.namespace(|| "key shedule");
+            self.KeyShedule(&mut key_shedule_cs, &elem)?
+        };
+
+        let mut state = self.hash_state.clone();
+
+        // before we done any encryption we need one extra-round of AddRoundKey
+        {
+            let mut first_round_cs = cs.namespace(|| "round 0");
+            self.AddRoundKey(&mut first_round_cs, &mut state, &key, 0)?;
+        }
+
+        for round in 1..(self.Nr+1) {
+            let mut round_cs = cs.namespace(|| format!("round {}", round));
+
+            self.ColumnDecomposition(&mut round_cs, &mut state)?;
+            self.ByteSub(&mut round_cs, &mut state, true)?;
+            self.ShiftRow(&mut state)?;
+
+            if round != self.Nr {
+                self.MixColumn(&mut round_cs, &mut state)?;
+            }
+            self.ColumnComposition(&mut round_cs, &mut state)?;
+
+            self.AddRoundKey(&mut round_cs, &mut state, &key, round)?;
+        }
+
+        // Davis-Meyer final xor
+        let mut davis_meyer_final_cs = cs.namespace(|| "Davis-Meyer final");
+        for (x, k) in self.hash_state.iter_mut().zip(state.into_iter()) {
+            *x = x.add(&mut davis_meyer_final_cs, &k)?;
+        }
 
         Ok(())
     }
 
     pub fn squeeze<CS: ConstraintSystem<E>>(
-        &self, cs: &mut CS, elem: AllocatedNum<E>) -> Result<AllocatedNum<E>, SynthesisError>
+        &self, cs: &mut CS) -> Result<AllocatedNum<E>, SynthesisError>
     {
+        let args = [&self.hash_state[0], &self.hash_state[1], &self.hash_state[2], &self.hash_state[3]];
+        AllocatedNum::pack_32_t0_128(cs, args, &self.s_128_to_32)
+    }
+}
 
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use super::super::test_assembly::TestAssembly;
+
+
+    struct TestCircuit<E: Engine> {
+        input: E::Fr,
+        expected_output: E::Fr,
+        Nb: usize, 
+        Nk: usize, 
+        Nr: usize, 
+        shift_offsets: Vec<usize>,
+    }
+
+    impl<E: Engine> BinaryCircuit<E> for TestCircuit<E> {
+        fn synthesize<CS: ConstraintSystem<E>>(
+            &self,
+            cs: &mut CS,
+        ) -> Result<(), SynthesisError> 
+        {
+            let mut aes_gadget = {
+                let mut allocation_cs = cs.namespace(|| "var's pre-allocation");
+                RijndaelGadget::<E>::new(&mut allocation_cs, self.Nb, self.Nk, self.Nr, self.shift_offsets.clone())
+            };
+
+   
+
+            let input = AllocatedNum::alloc(cs, || Ok(self.input))?;
+            let expected_output = AllocatedNum::alloc(cs, || Ok(self.expected_output))?;
+            
+            aes_gadget.absord(cs, input)?;
+
+            let output = aes_gadget.squeeze(cs)?;
+            output.equals(cs,  &expected_output)?;
+        
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_AES_128_gadget() {
+
+        let input = rand::thread_rng().gen();
+        let expected_output = rand::thread_rng().gen();
+
+        let Nb: usize = 4; 
+        let Nk: usize = 4;
+        let Nr: usize = 10; 
+        let shift_offsets: Vec<usize> = vec![1, 2, 3];
+
+        let test_circuit = TestCircuit::<Engine128> {
+            input,
+            expected_output,
+            Nb,
+            Nk,
+            Nr,
+            shift_offsets,
+        };
+
+        let mut cs = TestAssembly::<Engine128>::new();
+        test_circuit.synthesize(&mut cs).expect("should synthesize");
+
+        println!("Num constraints: {}", cs.num_gates());
+        cs.print_statistics();
     }
 }
 
