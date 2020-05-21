@@ -6,6 +6,10 @@ use super::cs::*;
 use super::gates::*;
 use super::binary_field::BinaryField;
 use enum_map::{enum_map, EnumMap};
+use std::iter;
+
+
+const MAX_WIDTH_LENGTH: usize = 8;
 
 
 pub struct TestAssembly<E: Engine> {
@@ -24,6 +28,8 @@ pub struct TestAssembly<E: Engine> {
     constraints_per_namespace: Vec<(String, usize)>,
     cur_namespace_idx: usize,
     constraints_per_type: EnumMap::<GateType, usize>,
+
+    var_on_prev_row : [Option<Variable>; MAX_WIDTH_LENGTH],
 }
 
 
@@ -100,6 +106,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::ConstantGate] += 1;
 
+        self.update_state(&[variable]);
+
         Ok(())
     }
 
@@ -110,6 +118,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::AddGate] += 1;
+
+        self.update_state(&[left, right, output]);
 
         Ok(())
     }
@@ -122,6 +132,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::MulGate] += 1;
 
+        self.update_state(&[left, right, output]);
+
         Ok(())
     }
 
@@ -132,6 +144,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::Power4Gate] += 1;
+
+        self.update_state(&[x, x2, x4]);
 
         Ok(())
     }    
@@ -145,6 +159,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::TernaryAdditionGate] += 1;
 
+        self.update_state(&[a, b, c, out]);
+
         Ok(())
     }
 
@@ -156,6 +172,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::LinearCombinationGate] += 1;
+
+        self.update_state(&[a, b, out]);
 
         Ok(())
     }
@@ -171,6 +189,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::LongLinearCombinationGate] += 1;
 
+        self.update_state(&[a, b, c, out]);
+
         Ok(())
     }
 
@@ -183,6 +203,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::SelectorGate] += 1;
 
+        self.update_state(&[a, b, out]);
+
         Ok(())
     }
 
@@ -193,6 +215,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         self.constraints_per_type[GateType::EqualityGate] += 1;
+
+        self.update_state(&[left, right]);
 
         Ok(())
     }
@@ -213,6 +237,183 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
 
     fn get_root(&mut self) -> &mut Self::Root {
         self
+    }
+
+    fn new_decompose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError> 
+    {
+        let gate = Gate::new_decompose_gate(P, P0, P1, P2, P3);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+       
+        assert!(self.is_linked_to_previos_row(P));
+        self.update_state(&[P0, P1, P2, P3]);
+
+        Ok(())
+    }
+    
+    fn new_compose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError> 
+    {
+        let gate = Gate::new_compose_gate(P, P0, P1, P2, P3);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        assert!(self.is_linked_to_previos_row(P3));
+        self.update_state(&[P, P0, P1, P2]);
+
+        Ok(())
+    }
+    
+    fn new_inv_select_gate(
+        &mut self, x: Variable, x_inv: Variable, flag: Variable, out: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_inv_select_gate(x, x_inv, flag, out);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[x, x_inv, flag, out]);
+
+        Ok(())
+    }
+
+    fn new_sub_bytes_gate(
+        &mut self, x: Variable, x4: Variable, x16: Variable, x64: Variable, out: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_sub_bytes_gate(x, x4, x16, x64, out);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        assert!(self.is_linked_to_previos_row(x));
+        self.update_state(&[x4, x16, x64, out]);
+
+        Ok(())
+    }
+
+    fn new_mix_column_gate(
+        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_mix_column_gate(OUT, P0, P1, P2, P3);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        assert!(self.is_linked_to_previos_row(P3));
+        self.update_state(&[OUT, P0, P1, P2]);
+
+        Ok(())
+    }
+
+    fn new_add_update_round_key_gate(
+        &mut self, P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_add_update_round_key_gate(P_old, P_new, K_old, K_new, temp);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        assert!(self.is_linked_to_previos_row(temp));
+        self.update_state(&[P_old, P_new, K_old, K_new]);
+
+        Ok(())
+    }
+   
+
+    fn new_compose_wide_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_compose_wide_gate(P, P0, P1, P2, P3);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[P, P0, P1, P2, P3]);
+
+        Ok(())
+    }
+    
+    fn new_sub_byte_wide_gate(
+        &mut self,
+        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
+        y4: Variable, y16: Variable, y64: Variable, out: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_sub_byte_wide_gate(x, x_inv, flag, y, y4, y16, y64, out);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[x, x_inv, flag, y, y4, y16, y64, out]);
+
+        Ok(())
+    }
+    
+    fn new_mix_columns_wide_gate(
+        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_mix_columns_wide_gate(OUT, P0, P1, P2, P3);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[OUT, P0, P1, P2, P3]);
+
+        Ok(())
+    }
+     
+    fn new_round_add_update_wide_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, Q_new, K_new, temp);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[P_old, Q_old, K_old, P_new, Q_new, K_new, temp]);
+
+        Ok(())
+    }
+
+    fn new_final_hash_update_wide_gate(
+        &mut self,
+        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
+        K: Variable, L_new: Variable, R_new: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_final_hash_update_wide_gate(P, Q, L_old, R_old, K, L_new, R_new);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[P, Q, L_old, R_old, K, L_new, R_new]);
+
+        Ok(())
     }
 }
 
@@ -235,6 +436,8 @@ impl<E: Engine> TestAssembly<E> {
             constraints_per_namespace: vec![("uncategorized".to_string(), 0)],
             cur_namespace_idx: 0,
             constraints_per_type: EnumMap::<_, _>::new(),
+
+            var_on_prev_row : [None; MAX_WIDTH_LENGTH],
         };
 
         tmp
@@ -257,6 +460,8 @@ impl<E: Engine> TestAssembly<E> {
             constraints_per_namespace: vec![("uncategorized".to_string(), 0)],
             cur_namespace_idx: 0,
             constraints_per_type: EnumMap::<_, _>::new(),
+
+            var_on_prev_row : [None; MAX_WIDTH_LENGTH]
         };
 
         tmp
@@ -481,4 +686,28 @@ impl<E: Engine> TestAssembly<E> {
             println!("There are {} gates of type {}.", num_cnstr, gate_type);
         }
     }
+
+    fn update_state(&mut self, var_arr: &[Variable]) {
+        assert!(var_arr.len() <= MAX_WIDTH_LENGTH as usize);
+
+        let mut input_iter = var_arr.iter().map(|x| Some(*x)).chain(iter::repeat(None));
+        for (output, input) in self.var_on_prev_row.iter_mut().zip(input_iter) {
+            *output = input;
+        }
+    }
+
+    fn is_linked_to_previos_row(&self, var: Variable) -> bool {
+
+        for elem in self.var_on_prev_row.iter() {
+            let res = match elem {
+                Some(x) => *x == var,
+                None => false,
+            };
+            if res {
+                return true;
+            }
+        }
+
+        false
+    } 
 }

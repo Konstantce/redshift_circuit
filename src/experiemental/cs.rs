@@ -101,7 +101,7 @@ pub trait BinaryConstraintSystem<E: Engine> {
     ) -> Result<(), SynthesisError>;
 
     fn new_sub_bytes_gate(
-        &mut self, x4: Variable, x16: Variable, x64: Variable, out: Variable
+        &mut self, x: Variable, x4: Variable, x16: Variable, x64: Variable, out: Variable
     ) -> Result<(), SynthesisError>;
 
     fn new_mix_column_gate(
@@ -261,10 +261,10 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
     }
 
     fn new_sub_bytes_gate(
-        &mut self, x4: Variable, x16: Variable, x64: Variable, out: Variable
+        &mut self, x: Variable, x4: Variable, x16: Variable, x64: Variable, out: Variable
     ) -> Result<(), SynthesisError>
     {
-        self.0.new_sub_bytes_gate(x4, x16, x64, out)
+        self.0.new_sub_bytes_gate(x, x4, x16, x64, out)
     }
 
     fn new_mix_column_gate(
@@ -310,7 +310,7 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
         P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
     ) -> Result<(), SynthesisError>
     {
-        self.0.new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, )
+        self.0.new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, Q_new, K_new, temp)
     }
 
     fn new_final_hash_update_wide_gate(
@@ -319,7 +319,7 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
         K: Variable, L_new: Variable, R_new: Variable,
     ) -> Result<(), SynthesisError>
     {
-        self.0.new.new_final_hash_update_wide_gate
+        self.0.new_final_hash_update_wide_gate(P, Q, L_old, R_old, K, L_new, R_new)
     }
 }
 
@@ -420,5 +420,88 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
     fn get_root(&mut self) -> &mut Self::Root
     {
         (**self).get_root()
+    }
+
+    fn new_decompose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError> 
+    {
+        (**self).new_decompose_gate(P, P0, P1, P2, P3)
+    }
+    
+    fn new_compose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_compose_gate(P, P0, P1, P2, P3)
+    }
+    
+    fn new_inv_select_gate(
+        &mut self, x: Variable, x_inv: Variable, flag: Variable, out: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_inv_select_gate(x, x_inv, flag, out)
+    }
+
+    fn new_sub_bytes_gate(
+        &mut self, x4: Variable, x16: Variable, x64: Variable, out: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_sub_bytes_gate(x, x4, x16, x64, out)
+    }
+
+    fn new_mix_column_gate(
+        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_mix_column_gate(OUT, P0, P1, P2, P3)
+    }
+
+    fn new_add_update_round_key_gate(
+        &mut self, P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_add_update_round_key_gate(P_old, P_new, K_old, K_new, temp)
+    }
+   
+    fn new_compose_wide_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_compose_wide_gate(P, P0, P1, P2, P3)
+    }
+    
+    fn new_sub_byte_wide_gate(
+        &mut self,
+        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
+        y4: Variable, y16: Variable, y64: Variable, out: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_sub_byte_wide_gate(x, x_inv, flag, y, y4, y16, y64, out)
+    }
+    
+    fn new_mix_columns_wide_gate(
+        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_mix_columns_wide_gate(OUT, P0, P1, P2, P3)
+    }
+     
+    fn new_round_add_update_wide_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, Q_new, K_new, temp)
+    }
+
+    fn new_final_hash_update_wide_gate(
+        &mut self,
+        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
+        K: Variable, L_new: Variable, R_new: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_final_hash_update_wide_gate(P, Q, L_old, R_old, K, L_new, R_new)
     }
 }

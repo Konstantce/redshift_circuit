@@ -267,7 +267,7 @@ pub enum Gate<Fr: BinaryField> {
     // y1 = x^4, y2 = y1^4=x^16, y2 = y1^4 = x^64, 
     // subfield check: x = y2^4 = x^256
     // out = \sum c_i x^{2^i}, for i \in [0, 7]
-    SubBytesGate([Variable; 4]),
+    SubBytesGate([Variable; 5]),
 
     // MixClolumnGadget: arguments are [OUT, P0, P1, P2, P3]
     // as in composeGadget we assume that P3 was defined on previous row
@@ -412,8 +412,8 @@ impl<Fr: BinaryField> Gate<Fr> {
         Self::InvSelectorGate([x, x_inv, flag, out])
     }
 
-    pub(crate) fn new_sub_bytes_gate(x4: Variable, x16: Variable, x64: Variable, out: Variable) -> Self {
-        Self::SubBytesGate([x4, x16, x64, out])
+    pub(crate) fn new_sub_bytes_gate(x: Variable, x4: Variable, x16: Variable, x64: Variable, out: Variable) -> Self {
+        Self::SubBytesGate([x, x4, x16, x64, out])
     }
 
     pub(crate) fn new_mix_column_gate(OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable) -> Self {

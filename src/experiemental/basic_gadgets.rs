@@ -866,6 +866,123 @@ impl<E: Engine> AllocatedNum<E> {
             value,
             variable: var
         })
+    }
+
+    pub fn decompose<CS>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<[Self; 4], SynthesisError>
+        where CS: ConstraintSystem<E>
+    {
+        let decomposed = (0..4).map(|_| cs.alloc(|| {
+
+            let mut running_sum = E::Fr::zero();
+            let mut coef = E::Fr::one();
+
+            for e in elems.iter() {
+                let mut tmp = *e.value.get()?;
+                tmp.mul_assign(&coef);
+
+                running_sum.add_assign(&tmp);
+                coef.mul_assign(&s);
+            }
+
+            value = Some(running_sum);
+            Ok(running_sum)
+        })?;)
+
+        cs.new_long_linear_combination_gate(
+            elems[0].get_variable(),
+            elems[1].get_variable(),
+            elems[2].get_variable(),
+            aux_y,
+            E::Fr::one(),
+            s1,
+            s2,
+        )?;
+    }
+
+    fn new_decompose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError> 
+    {
+        self.0.new_decompose_gate(P, P0, P1, P2, P3)
+    }
+    
+    fn new_compose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_compose_gate(P, P0, P1, P2, P3)
+    }
+    
+    fn new_inv_select_gate(
+        &mut self, x: Variable, x_inv: Variable, flag: Variable, out: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_inv_select_gate(x, x_inv, flag, out)
+    }
+
+    fn new_sub_bytes_gate(
+        &mut self, x: Variable, x4: Variable, x16: Variable, x64: Variable, out: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_sub_bytes_gate(x, x4, x16, x64, out)
+    }
+
+    fn new_mix_column_gate(
+        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_mix_column_gate(OUT, P0, P1, P2, P3)
+    }
+
+    fn new_add_update_round_key_gate(
+        &mut self, P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_add_update_round_key_gate(P_old, P_new, K_old, K_new, temp)
+    }
+   
+    fn new_compose_wide_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_compose_wide_gate(P, P0, P1, P2, P3)
+    }
+    
+    fn new_sub_byte_wide_gate(
+        &mut self,
+        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
+        y4: Variable, y16: Variable, y64: Variable, out: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_sub_byte_wide_gate(x, x_inv, flag, y, y4, y16, y64, out)
+    }
+    
+    fn new_mix_columns_wide_gate(
+        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_mix_columns_wide_gate(OUT, P0, P1, P2, P3)
+    }
+     
+    fn new_round_add_update_wide_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, Q_new, K_new, temp)
+    }
+
+    fn new_final_hash_update_wide_gate(
+        &mut self,
+        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
+        K: Variable, L_new: Variable, R_new: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_final_hash_update_wide_gate(P, Q, L_old, R_old, K, L_new, R_new)
     } 
 }
         
