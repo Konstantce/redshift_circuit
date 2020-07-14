@@ -155,15 +155,8 @@ pub enum GateType {
     ComposeGate,
     InvSelectorGate,
     SubBytesGate,
-    MixClolumnGate,
+    MixClolumnsGate,
     RoundKeyAddUpdateGate,
-
-    // generation 3 gates
-    ComposeWideGate,
-    SubByteWideGate,
-    MixColumnsWideGate,
-    RoundKeyAddUpdateWideGate,
-    FinalHashUpdateWideGate,
 }
 
 
@@ -185,15 +178,8 @@ impl fmt::Display for GateType {
             GateType::ComposeGate => "Composition Gate",
             GateType::InvSelectorGate => "InvSelector Gate",
             GateType::SubBytesGate => "SubBytes Gate",
-            GateType::MixClolumnGate => "MixColumnGate",
+            GateType::MixClolumnsGate => "MixColumnGate",
             GateType::RoundKeyAddUpdateGate => "RoundKeyAddUpdateGate",
-
-            // generation 3 gates
-            GateType::ComposeWideGate => "ComposeWideGate",
-            GateType::SubByteWideGate => "SubByteWideGate",
-            GateType::MixColumnsWideGate => "MixColumnsWideGate",
-            GateType::RoundKeyAddUpdateWideGate => "RoundKeyAddUpdateWideGate",
-            GateType::FinalHashUpdateWideGate => "FinalHashUpdateGate",
         };
         
         write!(f, "{}", description)
@@ -246,6 +232,7 @@ pub enum Gate<Fr: BinaryField> {
     // this gadget asserts that
     // P = c0 * P0 + c1 * P1 + c2 * P2 + c3 * P3
     // for some predefined constants [c0, c1, c3, c3]
+    // used for splitting 32-bit element into 4 bytes
     DecomposeGate([Variable; 5]),
 
     // inverse to the previous operation: 
@@ -266,7 +253,7 @@ pub enum Gate<Fr: BinaryField> {
     // the transition functions are: 
     // y1 = x^4, y2 = y1^4=x^16, y2 = y1^4 = x^64, 
     // subfield check: x = y2^4 = x^256
-    // out = \sum c_i x^{2^i}, for i \in [0, 7]
+    // out = \sum c_i x^{2^i}, for i \in [0, 7] - final result of SubBytes(x)
     SubBytesGate([Variable; 5]),
 
     // MixClolumnGadget: arguments are [OUT, P0, P1, P2, P3]
@@ -275,36 +262,27 @@ pub enum Gate<Fr: BinaryField> {
     // [Q0, Q1, Q2, Q3]^(T)  = M * [P0, P1, P2, P3] ^ (T)
     // and composition: OUT = Q = Q0 * + Q1 * s + Q2 * s^2 + Q3 * s^3  
     // so it reduces to some linear combination of P0, P1, P2, P3
-    MixColumnGate([Variable; 5]),
+    MixColumnsGate([Variable; 5]),
 
     //simultaneous AddRoundKey + GenerateNextRoundLey
     // let temp = SubBytes(Rot(Key))
     // then with the state (P_old, P_new, K_old, K_new) (temp is a hidden variable)
     // we have P_new = P_old + K_old
     // K_new = K_old + temp and continet
+    // NB: there is a special workflow for the final round though!
     RoundKeyAddUpdateGate([Variable; 5]),
-
-    // NB: there is a special optimization for the final round though!
-    // first combine then xor!
-
 
     // this used for 128-bit field and Hirose Hash construction with 256bit output
     // her state width is 8
 
-    // Compose Decompose for state of width 8
-    // P = [P0, P1, P2, P3]
-    ComposeWideGate([Variable; 5]),
-
     // for width8 we may actually compose InvSelect and SubBytes in one row
     // the state will be then (x, x_inv, flag, out, out^4, out^16, out^64, res_sum)
-    SubByteWideGate([Variable; 8]),
-
-    MixColumnsWideGate([Variable; 5]),
+    //SubByteWideGate([Variable; 8]),
 
     // for HiroseSheme the key is th same for both "subciphers"
     // so we may simultaneouly multiple P and Q by the same round key and update the key
     // the state is [P_old, Q_old, K_old, P_new, Q_new, temp, K_new]
-    RoundKeyAddUpdateWideGate([Variable; 7]),
+    //RoundKeyAddUpdateWideGate([Variable; 7]),
 
     // in the final key addition there is no need to update the key:
     // we assume that all variables in the final key addition are composed back 10 128-bit width
@@ -313,14 +291,8 @@ pub enum Gate<Fr: BinaryField> {
     //the transition function are actually the following: 
     // L_new = L_old + P + K
     // R_new = R_old + Q + K
-    FinalHashUpdateWideGate([Variable; 7]),
+    //FinalHashUpdateWideGate([Variable; 7]),
 }
-
-// We also need inversion in Field which is implemented using  the following PAIR of MUL gates:
-//  I * X = R
-//  (1-R) * X = 0 => X * R = X
-// if X = 0 then R = 0
-// if X != 0 then R = 1 and I = X^{-1}
 
 
 impl<Fr: BinaryField> Gate<Fr> {
@@ -385,14 +357,8 @@ impl<Fr: BinaryField> Gate<Fr> {
             Gate::ComposeGate(_) => GateType::ComposeGate,
             Gate::InvSelectorGate(_) => GateType::InvSelectorGate,
             Gate::SubBytesGate(_) => GateType::SubBytesGate,
-            Gate::MixColumnGate(_) => GateType::MixColumnsWideGate,
+            Gate::MixColumnsGate(_) => GateType::MixClolumnsGate,
             Gate::RoundKeyAddUpdateGate(_) => GateType::RoundKeyAddUpdateGate,
-
-            Gate::ComposeWideGate(_) => GateType::ComposeWideGate,
-            Gate::SubByteWideGate(_) => GateType::SubByteWideGate,
-            Gate::MixColumnsWideGate(_) => GateType::MixColumnsWideGate,
-            Gate::RoundKeyAddUpdateWideGate(_) => GateType::RoundKeyAddUpdateWideGate,
-            Gate::FinalHashUpdateWideGate(_) => GateType::FinalHashUpdateWideGate,
 
             _ => unreachable!(),
         };
@@ -416,45 +382,13 @@ impl<Fr: BinaryField> Gate<Fr> {
         Self::SubBytesGate([x, x4, x16, x64, out])
     }
 
-    pub(crate) fn new_mix_column_gate(OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable) -> Self {
-        Self::MixColumnGate([OUT, P0, P1, P2, P3])
+    pub(crate) fn new_mix_columns_gate(OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable) -> Self {
+        Self::MixColumnsGate([OUT, P0, P1, P2, P3])
     }
 
     pub(crate) fn new_add_update_round_key_gate(
         P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable) -> Self {
         
         Self::RoundKeyAddUpdateGate([P_old, P_new, K_old, K_new, temp])
-    }
-
-
-    pub(crate) fn new_compose_wide_gate(P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable) -> Self {
-        Self::ComposeWideGate([P, P0, P1, P2, P3])
-    }
-
-    pub(crate) fn new_sub_byte_wide_gate(
-        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
-        y4: Variable, y16: Variable, y64: Variable, out: Variable,
-    ) -> Self {
-        Self::SubByteWideGate([x, x_inv, flag, y, y4, y16, y64, out])
-    }
-
-    pub(crate) fn new_mix_columns_wide_gate(
-        OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Self {
-        Self::MixColumnsWideGate([OUT, P0, P1, P2, P3])
-    }
-
-    pub(crate) fn new_round_add_update_wide_gate(
-        P_old: Variable, Q_old: Variable, K_old: Variable, 
-        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
-    ) -> Self {
-        Self::RoundKeyAddUpdateWideGate([P_old, Q_old, K_old, P_new, Q_new, K_new, temp])
-    }
-
-    pub(crate) fn new_final_hash_update_wide_gate(
-        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
-        K: Variable, L_new: Variable, R_new: Variable,
-    ) -> Self {
-        Self::FinalHashUpdateWideGate([P, Q, L_old, R_old, K, L_new, R_new])
     }
 }

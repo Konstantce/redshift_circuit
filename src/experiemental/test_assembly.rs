@@ -306,7 +306,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
     ) -> Result<(), SynthesisError>
     {
-        let gate = Gate::new_mix_column_gate(OUT, P0, P1, P2, P3);
+        let gate = Gate::new_mix_columns_gate(OUT, P0, P1, P2, P3);
         self.constraints_per_type[gate.gate_type()] += 1;
         self.aux_gates.push(gate);
         self.n += 1;
@@ -330,88 +330,6 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         
         assert!(self.is_linked_to_previos_row(temp));
         self.update_state(&[P_old, P_new, K_old, K_new]);
-
-        Ok(())
-    }
-   
-
-    fn new_compose_wide_gate(
-        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        let gate = Gate::new_compose_wide_gate(P, P0, P1, P2, P3);
-        self.constraints_per_type[gate.gate_type()] += 1;
-        self.aux_gates.push(gate);
-        self.n += 1;
-        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
-        
-        self.update_state(&[P, P0, P1, P2, P3]);
-
-        Ok(())
-    }
-    
-    fn new_sub_byte_wide_gate(
-        &mut self,
-        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
-        y4: Variable, y16: Variable, y64: Variable, out: Variable,
-    ) -> Result<(), SynthesisError>
-    {
-        let gate = Gate::new_sub_byte_wide_gate(x, x_inv, flag, y, y4, y16, y64, out);
-        self.constraints_per_type[gate.gate_type()] += 1;
-        self.aux_gates.push(gate);
-        self.n += 1;
-        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
-        
-        self.update_state(&[x, x_inv, flag, y, y4, y16, y64, out]);
-
-        Ok(())
-    }
-    
-    fn new_mix_columns_wide_gate(
-        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        let gate = Gate::new_mix_columns_wide_gate(OUT, P0, P1, P2, P3);
-        self.constraints_per_type[gate.gate_type()] += 1;
-        self.aux_gates.push(gate);
-        self.n += 1;
-        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
-        
-        self.update_state(&[OUT, P0, P1, P2, P3]);
-
-        Ok(())
-    }
-     
-    fn new_round_add_update_wide_gate(
-        &mut self,
-        P_old: Variable, Q_old: Variable, K_old: Variable, 
-        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        let gate = Gate::new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, Q_new, K_new, temp);
-        self.constraints_per_type[gate.gate_type()] += 1;
-        self.aux_gates.push(gate);
-        self.n += 1;
-        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
-        
-        self.update_state(&[P_old, Q_old, K_old, P_new, Q_new, K_new, temp]);
-
-        Ok(())
-    }
-
-    fn new_final_hash_update_wide_gate(
-        &mut self,
-        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
-        K: Variable, L_new: Variable, R_new: Variable,
-    ) -> Result<(), SynthesisError>
-    {
-        let gate = Gate::new_final_hash_update_wide_gate(P, Q, L_old, R_old, K, L_new, R_new);
-        self.constraints_per_type[gate.gate_type()] += 1;
-        self.aux_gates.push(gate);
-        self.n += 1;
-        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
-        
-        self.update_state(&[P, Q, L_old, R_old, K, L_new, R_new]);
 
         Ok(())
     }

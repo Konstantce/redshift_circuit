@@ -684,6 +684,165 @@ impl Field for BinaryField256 {
 
 
 
+#[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
+pub struct BinaryField192
+{
+    repr: [u32; 6],
+}
+
+
+impl ::std::fmt::Debug for BinaryField192
+{
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "0x")?;
+        for i in self.repr.iter().rev() {
+            write!(f, "{:016x}", *i)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl ::rand::Rand for BinaryField192 {
+    #[inline(always)]
+    fn rand<R: ::rand::Rng>(rng: &mut R) -> Self {
+        BinaryField192{ repr: rng.gen()}
+    }
+}
+
+impl ::std::fmt::Display for BinaryField192 {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "0b")?;
+        for i in self.repr.iter().rev() {
+            write!(f, "{:032b}", *i)?;
+        }
+
+        Ok(())
+    }
+}
+
+
+impl BinaryField for BinaryField192 {
+    type Repr = [u32; 6];
+    type ByteRepr = [u8; 24];
+
+    fn num_bits(&self) -> u32 {
+        192
+    }
+
+    fn capacity(&self) -> u32 {
+        192
+    }
+
+    fn from_repr(repr: [u32; 6]) -> Self {
+        Self { repr }
+    }
+
+    fn into_repr(&self) -> [u32; 6] {
+        self.repr.clone()
+    }
+
+    fn from_byte_repr(byte_repr: [u8; 24]) -> Self {
+        let mut repr : [u32; 6] = [0; 6];
+        for (input, output) in byte_repr.chunks(4).zip(repr.iter_mut()) {
+            let mut temp : [u8; 4] = [0; 4];
+            
+            // it's Rust, and is is far from being perfect
+            for (x, y) in input.iter().zip(temp.iter_mut()) {
+                *y = *x;
+            }
+
+            *output = unsafe { 
+                std::mem::transmute::<[u8; 4], u32>(temp) 
+            }.to_le()
+        }
+        Self {repr}
+    }
+
+    fn into_byte_repr(&self) -> [u8; 24] {
+        let mut byte_repr : [u8; 24] = [0; 24];
+        for (input, output) in self.repr.iter().zip(byte_repr.chunks_mut(4)) {
+            let temp = unsafe { 
+                std::mem::transmute::<u32, [u8; 4]>(input.to_le()) 
+            };
+            output.clone_from_slice(&temp);
+        }
+        byte_repr
+    }
+}
+
+
+impl Field for BinaryField192 {
+
+    fn zero() -> Self {
+        Self { repr : [0, 0, 0, 0, 0, 0]}
+    }
+
+    fn one() -> Self {
+        Self { repr : [1, 0, 0, 0, 0, 0]}
+    }
+
+    /// Returns true iff this element is zero.
+    fn is_zero(&self) -> bool {
+        self.repr.iter().all(|x| *x == 0)
+    }
+
+    /// Squares this element.
+    fn square(&mut self) {
+        let temp = self.clone();
+        self.mul_assign(&temp);
+    }
+
+    /// Doubles this element.
+    fn double(&mut self) {
+        let temp = self.clone();
+        self.add_assign(&temp);
+    }
+
+    /// Negates this element.
+    fn negate(&mut self) {
+        //do nothing
+    }
+
+    /// Adds another element to this element.
+    fn add_assign(&mut self, other: &Self) {
+        for (a, b) in self.repr.iter_mut().zip(other.repr.iter()) {
+            *a ^= b;
+        }
+    }
+
+    /// Subtracts another element from this element.
+    fn sub_assign(&mut self, other: &Self) {
+        self.add_assign(other)
+    }
+
+    /// Multiplies another element by this element.
+    fn mul_assign(&mut self, other: &Self) {
+
+        *self = Self::zero();
+        return;
+    }
+        
+    /// Exponentiates this element by a power of the base prime modulus via
+    /// the Frobenius automorphism.
+    fn frobenius_map(&mut self, power: usize) {
+        unimplemented!();
+    }
+
+    /// Computes the multiplicative inverse of this element, if nonzero.
+    fn inverse(&self) -> Option<Self> {
+        Some(Self::zero())
+    }
+
+    /// Exponentiates this element by a number represented with `u64` limbs,
+    /// least significant digit first.
+    fn pow<S: AsRef<[u64]>>(&self, exp: S) -> Self {
+        Self::one()
+    }
+}
+
+
+
 
 
 

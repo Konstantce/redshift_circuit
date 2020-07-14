@@ -853,14 +853,6 @@ impl<E: Engine> AllocatedNum<E> {
             s1,
             s2,
         )?;
-
-        // cs.new_linear_combination_gate(
-        //     aux_y,
-        //     elems[3].get_variable(),
-        //     var,
-        //     E::Fr::one(),
-        //     s3,
-        // )?;
        
         Ok(AllocatedNum {
             value,
@@ -874,116 +866,94 @@ impl<E: Engine> AllocatedNum<E> {
     ) -> Result<[Self; 4], SynthesisError>
         where CS: ConstraintSystem<E>
     {
-        let decomposed = (0..4).map(|_| cs.alloc(|| {
+        let p0 = AllocatedNum::alloc_random(cs)?;
+        let p1 = AllocatedNum::alloc_random(cs)?;
+        let p2 = AllocatedNum::alloc_random(cs)?;
+        let p3 = AllocatedNum::alloc_random(cs)?;
 
-            let mut running_sum = E::Fr::zero();
-            let mut coef = E::Fr::one();
+        cs.new_decompose_gate(self.variable, p0.variable, p1.variable, p2.variable, p3.variable)?;
 
-            for e in elems.iter() {
-                let mut tmp = *e.value.get()?;
-                tmp.mul_assign(&coef);
-
-                running_sum.add_assign(&tmp);
-                coef.mul_assign(&s);
-            }
-
-            value = Some(running_sum);
-            Ok(running_sum)
-        })?;)
-
-        cs.new_long_linear_combination_gate(
-            elems[0].get_variable(),
-            elems[1].get_variable(),
-            elems[2].get_variable(),
-            aux_y,
-            E::Fr::one(),
-            s1,
-            s2,
-        )?;
+        Ok([p0, p1, p2, p3])
     }
 
-    fn new_decompose_gate(
-        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError> 
+    pub fn compose<CS>(
+        p0: &AllocatedNum<E>, 
+        p1: &AllocatedNum<E>, 
+        p2: &AllocatedNum<E>, 
+        p3: &AllocatedNum<E>,
+        cs: &mut CS,
+    ) -> Result<Self, SynthesisError> 
+        where CS: ConstraintSystem<E>
     {
-        self.0.new_decompose_gate(P, P0, P1, P2, P3)
+        let p = AllocatedNum::alloc_random(cs)?;
+        cs.new_compose_gate(p.variable, p0.variable, p1.variable, p2.variable, p3.variable)?;
+        
+        Ok(p)
     }
     
-    fn new_compose_gate(
-        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>
+    pub fn inverse<CS>(
+        &mut self,
+        cs: &mut CS
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem<E>
     {
-        self.0.new_compose_gate(P, P0, P1, P2, P3)
-    }
-    
-    fn new_inv_select_gate(
-        &mut self, x: Variable, x_inv: Variable, flag: Variable, out: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        self.0.new_inv_select_gate(x, x_inv, flag, out)
+        let inv = AllocatedNum::alloc_random(cs)?;
+        let flag = AllocatedNum::alloc_random(cs)?;
+        let out = AllocatedNum::alloc_random(cs)?;
+        
+        cs.new_inv_select_gate(self.variable, inv.variable, flag.variable, out.variable)?;
+
+        Ok(out)
     }
 
-    fn new_sub_bytes_gate(
-        &mut self, x: Variable, x4: Variable, x16: Variable, x64: Variable, out: Variable
-    ) -> Result<(), SynthesisError>
+    pub fn sub_bytes_internals<CS>(
+        &mut self, 
+        cs: &mut CS,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem<E>
     {
-        self.0.new_sub_bytes_gate(x, x4, x16, x64, out)
+        let x4 = AllocatedNum::alloc_random(cs)?;
+        let x16 = AllocatedNum::alloc_random(cs)?;
+        let x64 = AllocatedNum::alloc_random(cs)?;
+        let out = AllocatedNum::alloc_random(cs)?;
+        
+        cs.new_sub_bytes_gate(self.variable, x4.variable, x16.variable, x64.variable, out.variable)?;
+
+        Ok(out)
     }
 
-    fn new_mix_column_gate(
-        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>
+    pub fn mix_columns<CS>(
+        p0: &AllocatedNum<E>, 
+        p1: &AllocatedNum<E>, 
+        p2: &AllocatedNum<E>, 
+        p3: &AllocatedNum<E>,
+        cs: &mut CS,
+    ) -> Result<Self, SynthesisError>
+        where CS: ConstraintSystem<E>
     {
-        self.0.new_mix_column_gate(OUT, P0, P1, P2, P3)
+        let p = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_mix_column_gate(p.variable, p0.variable, p1.variable, p2.variable, p3.variable)?;
+
+        Ok(p)
     }
 
-    fn new_add_update_round_key_gate(
-        &mut self, P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable
-    ) -> Result<(), SynthesisError>
+    pub fn add_update_round_key<CS>(
+        p_old: &AllocatedNum<E>, 
+        k_old: &AllocatedNum<E>,
+        modifier: &AllocatedNum<E>,
+        cs: &mut CS,
+    ) -> Result<(Self, Self), SynthesisError>
+        where CS: ConstraintSystem<E>
     {
-        self.0.new_add_update_round_key_gate(P_old, P_new, K_old, K_new, temp)
+        let p_new = AllocatedNum::alloc_random(cs)?;
+        let k_new = AllocatedNum::alloc_random(cs)?;
+        
+        cs.new_add_update_round_key_gate(p_old.variable, p_new.variable, k_old.variable, k_new.variable, modifier.variable)?;
+
+        Ok((p_new, k_new))
     }
    
-    fn new_compose_wide_gate(
-        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        self.0.new_compose_wide_gate(P, P0, P1, P2, P3)
-    }
-    
-    fn new_sub_byte_wide_gate(
-        &mut self,
-        x : Variable, x_inv : Variable, flag: Variable, y: Variable, 
-        y4: Variable, y16: Variable, y64: Variable, out: Variable,
-    ) -> Result<(), SynthesisError>
-    {
-        self.0.new_sub_byte_wide_gate(x, x_inv, flag, y, y4, y16, y64, out)
-    }
-    
-    fn new_mix_columns_wide_gate(
-        &mut self, OUT: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        self.0.new_mix_columns_wide_gate(OUT, P0, P1, P2, P3)
-    }
-     
-    fn new_round_add_update_wide_gate(
-        &mut self,
-        P_old: Variable, Q_old: Variable, K_old: Variable, 
-        P_new: Variable, Q_new: Variable, K_new: Variable, temp: Variable
-    ) -> Result<(), SynthesisError>
-    {
-        self.0.new_round_add_update_wide_gate(P_old, Q_old, K_old, P_new, Q_new, K_new, temp)
-    }
-
-    fn new_final_hash_update_wide_gate(
-        &mut self,
-        P: Variable, Q: Variable, L_old: Variable, R_old: Variable, 
-        K: Variable, L_new: Variable, R_new: Variable,
-    ) -> Result<(), SynthesisError>
-    {
-        self.0.new_final_hash_update_wide_gate(P, Q, L_old, R_old, K, L_new, R_new)
-    } 
 }
         
 

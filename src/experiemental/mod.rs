@@ -5,6 +5,6 @@ pub mod cs;
 pub mod test_assembly;
 pub mod basic_gadgets;
 pub mod aes_circuit_davis_meyer;
-pub mod aes_circuit_hirose;
+//pub mod aes_circuit_hirose;
 
 
