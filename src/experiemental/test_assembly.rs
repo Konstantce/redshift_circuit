@@ -8,8 +8,7 @@ use super::binary_field::BinaryField;
 use enum_map::{enum_map, EnumMap};
 use std::iter;
 
-
-const MAX_WIDTH_LENGTH: usize = 8;
+const VAR_ARRAY_LEN: usize = 8;
 
 
 pub struct TestAssembly<E: Engine> {
@@ -29,7 +28,9 @@ pub struct TestAssembly<E: Engine> {
     cur_namespace_idx: usize,
     constraints_per_type: EnumMap::<GateType, usize>,
 
-    var_on_prev_row : [Option<Variable>; MAX_WIDTH_LENGTH],
+    var_on_prev_row : [Option<Variable>; VAR_ARRAY_LEN],
+    next_row_check: Option<Variable>,
+    state_width: usize,
 }
 
 
@@ -249,8 +250,8 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
        
-        assert!(self.is_linked_to_previos_row(P));
-        self.update_state(&[P0, P1, P2, P3]);
+        self.update_state(&[P, P0, P1, P2]);
+        self.next_row_check = Some(P0);
 
         Ok(())
     }
@@ -337,7 +338,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
 
 
 impl<E: Engine> TestAssembly<E> {
-    pub fn new() -> Self {
+    pub fn new(state_width: usize) -> Self {
         let tmp = Self {
             n: 0,
             m: 0,
@@ -355,13 +356,15 @@ impl<E: Engine> TestAssembly<E> {
             cur_namespace_idx: 0,
             constraints_per_type: EnumMap::<_, _>::new(),
 
-            var_on_prev_row : [None; MAX_WIDTH_LENGTH],
+            var_on_prev_row : [None; VAR_ARRAY_LEN],
+            next_row_check: None,
+            state_width: state_width,
         };
 
         tmp
     }
 
-    pub fn new_with_size_hints(num_inputs: usize, num_aux: usize) -> Self {
+    pub fn new_with_size_hints(num_inputs: usize, num_aux: usize, state_width: usize) -> Self {
         let tmp = Self {
             n: 0,
             m: 0,
@@ -379,7 +382,9 @@ impl<E: Engine> TestAssembly<E> {
             cur_namespace_idx: 0,
             constraints_per_type: EnumMap::<_, _>::new(),
 
-            var_on_prev_row : [None; MAX_WIDTH_LENGTH]
+            var_on_prev_row : [None; VAR_ARRAY_LEN],
+            next_row_check: None,
+            state_width: state_width,
         };
 
         tmp
@@ -606,7 +611,20 @@ impl<E: Engine> TestAssembly<E> {
     }
 
     fn update_state(&mut self, var_arr: &[Variable]) {
-        assert!(var_arr.len() <= MAX_WIDTH_LENGTH as usize);
+        assert!(var_arr.len() <= self.state_width);
+
+        if let Some(var) = self.next_row_check {
+            let mut found = false;
+            for elem in var_arr.iter() {
+                if *elem == var {
+                    found = true;
+                }
+            }
+            assert!(found);
+        }
+
+
+        self.next_row_check = None;
 
         let mut input_iter = var_arr.iter().map(|x| Some(*x)).chain(iter::repeat(None));
         for (output, input) in self.var_on_prev_row.iter_mut().zip(input_iter) {
@@ -625,7 +643,6 @@ impl<E: Engine> TestAssembly<E> {
                 return true;
             }
         }
-
         false
     } 
 }

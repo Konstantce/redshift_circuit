@@ -228,7 +228,7 @@ pub enum Gate<Fr: BinaryField> {
 
     //uses out from previous step
     // arguments are [P, P0, P1, P2, P3]
-    // we use P from previous step
+    // we use P, P1, P2, P3 in this step and assume that P0 will be defined in the next state
     // this gadget asserts that
     // P = c0 * P0 + c1 * P1 + c2 * P2 + c3 * P3
     // for some predefined constants [c0, c1, c3, c3]

@@ -91,20 +91,21 @@ impl<E: Engine> RijndaelGadget<E> {
             // initial key-addition
             let mut init_cs = cs.namespace(|| format!("intial key-addition"));
 
-            let mut modifier = master_key.last().unwrap();
-            let mut unpacked_modifier = modifier.decompose(&init_cs)?;
+            let mut modifier = master_key.last().unwrap().clone();
+            let mut unpacked_modifier = modifier.decompose(&mut init_cs)?;
 
             for elem in &mut unpacked_modifier {
-                *elem = self.sub_bytes(&init_cs, *elem)?;
+                *elem = self.sub_bytes(&mut init_cs, *elem)?;
             }
 
             modifier = AllocatedNum::compose(
-                unpacked_modifier[0], unpacked_modifier[1], unpacked_modifier[2], unpacked_modifier[3], &init_cs)?;
+                &unpacked_modifier[0], &unpacked_modifier[1], &unpacked_modifier[2], &unpacked_modifier[3], &mut init_cs
+            )?;
 
             for i in 0..self.Nb {
-                let (new_state, new_key) = AllocatedNum::add_update_round_key(state[i], key[i], modifier, &init_cs)?;
+                let (new_state, new_key) = AllocatedNum::add_update_round_key(&state[i], &key[i], &modifier, &mut init_cs)?;
                 state[i] = new_state;
-                new_key[i] = new_key;
+                key[i] = new_key;
                 modifier = new_key;
             }
         }
@@ -113,25 +114,57 @@ impl<E: Engine> RijndaelGadget<E> {
             let mut round_cs = cs.namespace(|| format!("round {}", round));
 
             for column in &mut state {
-                let unpacked_column = column.decompose(&round_cs);
+                let mut unpacked_column = column.decompose(&mut round_cs)?;
 
                 for elem in &mut unpacked_column  {
-                    *elem = self.sub_bytes(&init_cs, *elem)?;
+                    *elem = self.sub_bytes(&mut round_cs, *elem)?;
                 }
                 
-                *column = AllocatedNum::mix_columns();
-
-
+                *column = AllocatedNum::mix_columns(
+                    &unpacked_column[0], &unpacked_column[1], &unpacked_column[2], &unpacked_column[3], &mut round_cs
+                )?;
             }
 
-        
-        }
-    }
+            let mut modifier = key.last().unwrap().clone();
+            let mut unpacked_modifier = modifier.decompose(&mut round_cs)?;
 
-        // Davis-Meyer final xor
-        let mut davis_meyer_final_cs = cs.namespace(|| "Davis-Meyer final");
-        for (x, k) in self.hash_state.iter_mut().zip(state.into_iter()) {
-            *x = x.add(&mut davis_meyer_final_cs, &k)?;
+            for elem in &mut unpacked_modifier {
+                *elem = self.sub_bytes(&mut round_cs, *elem)?;
+            }
+
+            modifier = AllocatedNum::compose(
+                &unpacked_modifier[0], &unpacked_modifier[1], &unpacked_modifier[2], &unpacked_modifier[3], &mut round_cs
+            )?;
+
+            for i in 0..self.Nb {
+                let (new_state, new_key) = AllocatedNum::add_update_round_key(&state[i], &key[i], &modifier, &mut round_cs)?;
+                state[i] = new_state;
+                key[i] = new_key;
+                modifier = new_key;
+            } 
+        }
+
+        // final round is a bit different
+        {
+            let mut final_round_cs = cs.namespace(|| format!("final_round"));
+
+            for column in &mut state {
+                let mut unpacked_column = column.decompose(&mut final_round_cs)?;
+
+                for elem in &mut unpacked_column  {
+                    *elem = self.sub_bytes(&mut final_round_cs, *elem)?;
+                }
+
+                *column = AllocatedNum::compose(
+                    &unpacked_column[0], &unpacked_column[1], &unpacked_column[2], &unpacked_column[3], &mut final_round_cs
+                )?;
+            }
+
+            for i in 0..self.Nb {
+                self.hash_state[i] = AllocatedNum::davis_meyer_add_round_key(
+                    &self.hash_state[i], &key[i], &state[i], &mut final_round_cs
+                )?;
+            }
         }
 
         Ok(())
@@ -172,9 +205,11 @@ mod test {
                 RijndaelGadget::<E>::new(&mut allocation_cs, self.Nb, self.Nk, self.Nr, self.shift_offsets.clone())
             };
 
-   
+            let mut input = vec![];
+            for _ in 0..self.Nk {
+                input.push(AllocatedNum::alloc(cs, || Ok(self.input))?);
+            }
 
-            let input = AllocatedNum::alloc(cs, || Ok(self.input))?;
             let expected_output = AllocatedNum::alloc(cs, || Ok(self.expected_output))?;
             
             aes_gadget.absord(cs, input)?;
@@ -187,14 +222,14 @@ mod test {
     }
 
     #[test]
-    fn test_AES_128_gadget() {
+    fn test_DAVIS_MEYER_gadget() {
 
         let input = rand::thread_rng().gen();
         let expected_output = rand::thread_rng().gen();
 
-        let Nb: usize = 4; 
-        let Nk: usize = 4;
-        let Nr: usize = 10; 
+        let Nb: usize = 5; 
+        let Nk: usize = 5;
+        let Nr: usize = 11; 
         let shift_offsets: Vec<usize> = vec![1, 2, 3];
 
         let test_circuit = TestCircuit::<Engine128> {
@@ -206,7 +241,7 @@ mod test {
             shift_offsets,
         };
 
-        let mut cs = TestAssembly::<Engine128>::new();
+        let mut cs = TestAssembly::<Engine128>::new(4);
         test_circuit.synthesize(&mut cs).expect("should synthesize");
 
         println!("Num constraints: {}", cs.num_gates());

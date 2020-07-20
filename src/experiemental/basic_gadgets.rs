@@ -892,7 +892,7 @@ impl<E: Engine> AllocatedNum<E> {
     }
     
     pub fn inverse<CS>(
-        &mut self,
+        &self,
         cs: &mut CS
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem<E>
@@ -907,7 +907,7 @@ impl<E: Engine> AllocatedNum<E> {
     }
 
     pub fn sub_bytes_internals<CS>(
-        &mut self, 
+        &self, 
         cs: &mut CS,
     ) -> Result<Self, SynthesisError>
         where CS: ConstraintSystem<E>
@@ -952,6 +952,24 @@ impl<E: Engine> AllocatedNum<E> {
         cs.new_add_update_round_key_gate(p_old.variable, p_new.variable, k_old.variable, k_new.variable, modifier.variable)?;
 
         Ok((p_new, k_new))
+    }
+
+    // new_hash_state = aes_result + key + old_hash_state
+    pub fn davis_meyer_add_round_key<CS>(
+        old_hash_state: &AllocatedNum<E>,
+        key: &AllocatedNum<E>,
+        aes_state: &AllocatedNum<E>,
+        cs: &mut CS,
+    ) -> Result<Self, SynthesisError> 
+        where CS: ConstraintSystem<E>
+    {
+        let out = AllocatedNum::alloc_random(cs)?;
+        let one = E::Fr::one();
+        cs.new_long_linear_combination_gate(
+            old_hash_state.variable, key.variable, aes_state.variable, out.variable, one.clone(), one.clone(), one
+        )?;
+
+        Ok(out)
     }
    
 }
