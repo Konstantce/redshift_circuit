@@ -27,5 +27,6 @@ pub mod fri;
 pub mod redshift_circuit;
 
 pub mod experiemental;
+//pub mod funny_circuits;
 
 

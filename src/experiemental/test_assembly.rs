@@ -29,7 +29,7 @@ pub struct TestAssembly<E: Engine> {
     constraints_per_type: EnumMap::<GateType, usize>,
 
     var_on_prev_row : [Option<Variable>; VAR_ARRAY_LEN],
-    next_row_check: Option<Variable>,
+    next_row_check: Vec<Variable>,
     state_width: usize,
 }
 
@@ -251,7 +251,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
        
         self.update_state(&[P, P0, P1, P2]);
-        self.next_row_check = Some(P0);
+        self.next_row_check = vec![P0];
 
         Ok(())
     }
@@ -357,7 +357,7 @@ impl<E: Engine> TestAssembly<E> {
             constraints_per_type: EnumMap::<_, _>::new(),
 
             var_on_prev_row : [None; VAR_ARRAY_LEN],
-            next_row_check: None,
+            next_row_check: vec![],
             state_width: state_width,
         };
 
@@ -383,7 +383,7 @@ impl<E: Engine> TestAssembly<E> {
             constraints_per_type: EnumMap::<_, _>::new(),
 
             var_on_prev_row : [None; VAR_ARRAY_LEN],
-            next_row_check: None,
+            next_row_check: vec![],
             state_width: state_width,
         };
 
@@ -613,18 +613,17 @@ impl<E: Engine> TestAssembly<E> {
     fn update_state(&mut self, var_arr: &[Variable]) {
         assert!(var_arr.len() <= self.state_width);
 
-        if let Some(var) = self.next_row_check {
+        for var in self.next_row_check.iter() {
             let mut found = false;
             for elem in var_arr.iter() {
-                if *elem == var {
+                if *elem == *var {
                     found = true;
                 }
             }
             assert!(found);
         }
 
-
-        self.next_row_check = None;
+        self.next_row_check = vec![];
 
         let mut input_iter = var_arr.iter().map(|x| Some(*x)).chain(iter::repeat(None));
         for (output, input) in self.var_on_prev_row.iter_mut().zip(input_iter) {

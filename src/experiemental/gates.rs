@@ -138,7 +138,7 @@ pub enum Index {
 /// used for statistics
 #[derive(Enum)]
 pub enum GateType {
-    // generation 1 gates
+    // generation 1 gates (general purpose gates)
     EmptyGate,
     ConstantGate,
     AddGate,
@@ -150,13 +150,25 @@ pub enum GateType {
     SelectorGate,
     EqualityGate,
 
-    // generation 2 gates
+    // generation 2 gates (used in Davis-Meyer version of AES hash)
     DecomposeGate,
     ComposeGate,
     InvSelectorGate,
     SubBytesGate,
     MixClolumnsGate,
     RoundKeyAddUpdateGate,
+
+    // generation 3 gates (used in Hirose)
+
+    HiroseInitGate,
+    WideRoundKeyAddUpdateGate,
+    WideComposeDecompose,
+    PairedInvSelectorGate,
+    PairedSubBytesGate,
+    PairedDecomposeGate,
+    PairedComposeGate,
+    PairedMixColumnsGate,
+    WideFinalHashUpdateGate,
 }
 
 
@@ -180,6 +192,16 @@ impl fmt::Display for GateType {
             GateType::SubBytesGate => "SubBytes Gate",
             GateType::MixClolumnsGate => "MixColumnGate",
             GateType::RoundKeyAddUpdateGate => "RoundKeyAddUpdateGate",
+
+            GateType::HiroseInitGate => "Hirose Initiation Gate",
+            GateType::WideRoundKeyAddUpdateGate => "WideRoundKeyUpdate Gate",
+            GateType::WideComposeDecompose => "WideComposeDecompose Gate",
+            GateType::PairedInvSelectorGate => "Paired InvSelector Gate",
+            GateType::PairedSubBytesGate => "Paired SubBytes Gate",
+            GateType::PairedDecomposeGate => "Paired Decompose Gate",
+            GateType::PairedComposeGate => "Paired Compose Gate",
+            GateType::PairedMixColumnsGate => "Paired MixColumns Gate",
+            GateType::WideFinalHashUpdateGate => "Paired WideFinalHashUpdate Gate",
         };
         
         write!(f, "{}", description)
@@ -226,7 +248,6 @@ pub enum Gate<Fr: BinaryField> {
     // used for 192-bit field with Davis-Meyer of Rijndael
     // let call it CS version 2
 
-    //uses out from previous step
     // arguments are [P, P0, P1, P2, P3]
     // we use P, P1, P2, P3 in this step and assume that P0 will be defined in the next state
     // this gadget asserts that
@@ -249,7 +270,7 @@ pub enum Gate<Fr: BinaryField> {
     InvSelectorGate([Variable; 4]),
 
     // used for SubBytes : uses x from previous state (it's the first argument)
-    // current state is (y1, y2, 23, out)
+    // current state is (y1, y2, y3, out)
     // the transition functions are: 
     // y1 = x^4, y2 = y1^4=x^16, y2 = y1^4 = x^64, 
     // subfield check: x = y2^4 = x^256
@@ -272,26 +293,66 @@ pub enum Gate<Fr: BinaryField> {
     // NB: there is a special workflow for the final round though!
     RoundKeyAddUpdateGate([Variable; 5]),
 
+    //---------------------------------------------------------------------------------------------------------------
+    //---------------------------------------------------------------------------------------------------------------
+
     // this used for 128-bit field and Hirose Hash construction with 256bit output
     // her state width is 8
 
-    // for width8 we may actually compose InvSelect and SubBytes in one row
-    // the state will be then (x, x_inv, flag, out, out^4, out^16, out^64, res_sum)
-    //SubByteWideGate([Variable; 8]),
+    // Hirose starts with L (Left) = R (right) + c, where c - constant
+    // both L and R contains 4 columns
+    // state is (L0, L1, L2, L3, R0, R1, R2, R3)
+    // Pi (init) = Qi + c_i
+    HiroseInitGate([Variable; 8]),
 
     // for HiroseSheme the key is th same for both "subciphers"
-    // so we may simultaneouly multiple P and Q by the same round key and update the key
-    // the state is [P_old, Q_old, K_old, P_new, Q_new, temp, K_new]
-    //RoundKeyAddUpdateWideGate([Variable; 7]),
+    // so we may simultaneouly add to P and Q by the same round key and update the key
+    // the state is [P_old, Q_old, K_old, P_new, Q_new, K_new, temp]
+    // P_new = P_old + K_old
+    // Q_new = Q_old + K_old
+    // K_new = K_old + temp
+    WideRoundKeyAddUpdateGate([Variable; 7]),
+
+    // we exploit the fact that with 8 registers at our exposal, the packed variables P and
+    // it's component parts may be located on a single row
+    // state is [P, P0, P1, P2, P3]
+    WideComposeDecompose([Variable; 5]),
+
+    // same as ordinary InvSelect gadget, but process two elements simultaneously
+    // state is (x1, x1_inv, flag_x1, out_x1, x2, x2_inv, flag_x2, out_x2)
+    // i.e. two separated InvSelect gadgets are packed into single gate
+    PairedInvSelectorGate([Variable; 8]),
+
+    // the same situation as with WideInvSelectorGate except with the following additional remark:
+    // the state transitions functions' degree should not exceed the width of state
+    // that's why in the usual InvSelectorGadget y1 =x^4, y2 = y1^4 and so forth
+    // now y1 = x1^8, y2 = y1^8, z1 = x2^8, z2 = z1^8, so there is enough space for (x1, x2) on the row
+    // current state is (x1, y1, y2, out_x1, x2, z1, z2, out_x2)
+    PairedSubBytesGate([Variable; 8]),
+
+    // arguments are [P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3]
+    // we use P, P1, P2, P3, Q, Q1, Q2, Q3 in this step 
+    // and assume that P0, Q0 will be defined in the next state (for example in PairedInvSelectorGate)
+    PairedDecomposeGate([Variable; 10]),
+
+    // inverse to the previous operation: 
+    // arguments are the same: [P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3]
+    // however, this time we assume that (P3, Q3) were defined on the previous row
+    PairedComposeGate([Variable; 10]),
+
+    // MixClolumnGadget: arguments are [OUT_P, P0, P1, P2, P3, OUT_Q, Q0, Q1, Q2, Q3]
+    // as in PairedComposeGadget we assume that (P3, Q3) were defined on the row
+    PairedMixColumnsGate([Variable; 10]),
 
     // in the final key addition there is no need to update the key:
-    // we assume that all variables in the final key addition are composed back 10 128-bit width
-    // [L, R] is the "state" of Hirose constuction (Left and Right)
-    // the state is : [P, Q, L_old, R_old, K, L_new, R_new]
+    // [L, R] is the "state" of Hirose constuction (Left and Right) before goint into AES routine
+    // [P_old, P_new, K] are the values of P, Q, right after executing AES and before final key addition
+    // [P_new, Q_new] is final hash digest (new value of L, R)
+    // the state is : [L, P_old, P_new, R, Q_old, Q_new, K]
     //the transition function are actually the following: 
-    // L_new = L_old + P + K
-    // R_new = R_old + Q + K
-    //FinalHashUpdateWideGate([Variable; 7]),
+    // P_new = L + P_old + K
+    // Q_new = R + Q_old + K
+    WideFinalHashUpdateGate([Variable; 7]),
 }
 
 
@@ -360,6 +421,16 @@ impl<Fr: BinaryField> Gate<Fr> {
             Gate::MixColumnsGate(_) => GateType::MixClolumnsGate,
             Gate::RoundKeyAddUpdateGate(_) => GateType::RoundKeyAddUpdateGate,
 
+            Gate::HiroseInitGate(_) => GateType::HiroseInitGate,
+            Gate::WideRoundKeyAddUpdateGate(_) => GateType::WideRoundKeyAddUpdateGate,
+            Gate::WideComposeDecompose(_) => GateType::WideComposeDecompose,
+            Gate::PairedInvSelectorGate(_) => GateType::PairedInvSelectorGate,
+            Gate::PairedSubBytesGate(_) => GateType::PairedSubBytesGate,
+            Gate::PairedDecomposeGate(_) => GateType::PairedDecomposeGate,
+            Gate::PairedComposeGate(_) => GateType::PairedComposeGate,
+            Gate::PairedMixColumnsGate(_) => GateType::PairedMixColumnsGate,
+            Gate::WideFinalHashUpdateGate(_) => GateType::WideFinalHashUpdateGate,
+
             _ => unreachable!(),
         };
 
@@ -390,5 +461,77 @@ impl<Fr: BinaryField> Gate<Fr> {
         P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable) -> Self {
         
         Self::RoundKeyAddUpdateGate([P_old, P_new, K_old, K_new, temp])
+    }
+
+    pub(crate) fn new_hirose_init_gate(
+        L0: Variable, L1: Variable, L2: Variable, L3: Variable, 
+        R0: Variable, R1: Variable, R2: Variable, R3: Variable,
+    ) -> Self {
+        Self::HiroseInitGate([L0, L1, L2, L3, R0, R1, R2, R3])
+    }
+
+    pub(crate) fn new_wide_round_key_add_update(
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, 
+        K_modifier: Variable
+    ) -> Self {
+        Self::WideRoundKeyAddUpdateGate([P_old, Q_old, K_old, P_new, Q_new, K_new, K_modifier])
+    }
+
+    pub(crate) fn new_wide_compose_decompose_gate(
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Self {
+        Self::WideComposeDecompose([P, P0, P1, P2, P3])
+    }
+
+    pub(crate) fn new_paired_inv_select_gate(
+        x: Variable, x_inv: Variable, flag_x: Variable, out_x: Variable,
+        y: Variable, y_inv: Variable, flag_y: Variable, out_y: Variable,
+    ) -> Self {
+        Self::PairedInvSelectorGate([x, x_inv, flag_x, out_x, y, y_inv, flag_y, out_y])
+    } 
+
+    pub(crate) fn new_paired_sub_bytes_gate(
+        x: Variable, l1: Variable, l2: Variable, out_x: Variable,
+        y: Variable, n1: Variable, n2: Variable, out_y: Variable,
+    ) -> Self {
+        Self::PairedSubBytesGate([x,l1, l2, out_x, y, n1, n2, out_y])
+    }
+
+    pub(crate) fn new_paired_decompose_gate(
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Self {
+        Self::PairedDecomposeGate([P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3])
+    }
+
+    pub(crate) fn new_paired_compose_gate(
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Self {
+        Self::PairedComposeGate([P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3])
+    }
+
+    pub(crate) fn new_paired_mix_columns_gate(
+        OUT_P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        OUT_Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Self {
+        Self::PairedMixColumnsGate([OUT_P, P0, P1, P2, P3, OUT_Q, Q0, Q1, Q2, Q3])
+    }
+
+    // in the final key addition there is no need to update the key:
+    // [L, R] is the "state" of Hirose constuction (Left and Right) before goint into AES routine
+    // [P_old, P_new, K] are the values of P, Q, right after executing AES and before final key addition
+    // [P_new, Q_new] is final hash digest (new value of L, R)
+    // the state is : [L, P_old, P_new, R, Q_old, Q_new, K]
+    //the transition function are actually the following: 
+    // P_new = L + P_old + K
+    // Q_new = R + Q_old + K
+    pub(crate) fn new_wide_final_hash_update_gate(
+        L: Variable, P_old: Variable, P_new: Variable,
+        R: Variable, Q_old: Variable, Q_new: Variable,
+        K: Variable
+    ) -> Self {
+        Self::WideFinalHashUpdateGate([L, P_old, P_new, R, Q_old, Q_new, K])
     }
 }

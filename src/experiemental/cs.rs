@@ -117,6 +117,60 @@ pub trait BinaryConstraintSystem<E: Engine> {
     fn new_add_update_round_key_gate(
         &mut self, P_old: Variable, P_new: Variable, K_old: Variable, K_new: Variable, temp: Variable
     ) -> Result<(), SynthesisError>;
+
+    fn new_hirose_init_gate(
+        &mut self,
+        L0: Variable, L1: Variable, L2: Variable, L3: Variable, 
+        R0: Variable, R1: Variable, R2: Variable, R3: Variable,
+    ) -> Result<(), SynthesisError>; 
+
+    fn new_wide_round_key_add_update(
+        &mut self,
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, 
+        K_modifier: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_wide_compose_decompose_gate(
+        &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_inv_select_gate(
+        &mut self,
+        x: Variable, x_inv: Variable, flag_x: Variable, out_x: Variable,
+        y: Variable, y_inv: Variable, flag_y: Variable, out_y: Variable,
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_sub_bytes_gate(
+        &mut self,
+        x: Variable, l1: Variable, l2: Variable, out_x: Variable,
+        y: Variable, n1: Variable, n2: Variable, out_y: Variable,
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_decompose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_compose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_mix_columns_gate(
+        &mut self,
+        OUT_P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        OUT_Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_wide_final_hash_update_gate(
+        &mut self,
+        L: Variable, P_old: Variable, P_new: Variable,
+        R: Variable, Q_old: Variable, Q_new: Variable,
+        K: Variable
+    ) -> Result<(), SynthesisError>;
 }
 
 
@@ -259,6 +313,64 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
     {
         self.0.new_add_update_round_key_gate(P_old, P_new, K_old, K_new, temp)
     }
+
+    fn new_hirose_init_gate(
+        &mut self,
+        L0: Variable, L1: Variable, L2: Variable, L3: Variable, 
+        R0: Variable, R1: Variable, R2: Variable, R3: Variable,
+    ) -> Result<(), SynthesisError> 
+    {
+        self.0.new_hirose_init_gate(L0)
+    }
+
+    fn new_wide_round_key_add_update(
+        &mut self,
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, 
+        K_modifier: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_wide_compose_decompose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_inv_select_gate(
+        &mut self,
+        x: Variable, x_inv: Variable, flag_x: Variable, out_x: Variable,
+        y: Variable, y_inv: Variable, flag_y: Variable, out_y: Variable,
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_sub_bytes_gate(
+        &mut self,
+        x: Variable, l1: Variable, l2: Variable, out_x: Variable,
+        y: Variable, n1: Variable, n2: Variable, out_y: Variable,
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_decompose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_compose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_paired_mix_columns_gate(
+        &mut self,
+        OUT_P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        OUT_Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>;
+
+    fn new_wide_final_hash_update_gate(
+        &mut self,
+        L: Variable, P_old: Variable, P_new: Variable,
+        R: Variable, Q_old: Variable, Q_new: Variable,
+        K: Variable
+    ) -> Result<(), SynthesisError>;
 }
 
 
