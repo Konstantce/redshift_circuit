@@ -871,7 +871,13 @@ impl<E: Engine> AllocatedNum<E> {
         let p2 = AllocatedNum::alloc_random(cs)?;
         let p3 = AllocatedNum::alloc_random(cs)?;
 
-        cs.new_decompose_gate(self.variable, p0.variable, p1.variable, p2.variable, p3.variable)?;
+        match cs.get_state_width() {
+            4usize => cs.new_decompose_gate(self.variable, p0.variable, p1.variable, p2.variable, p3.variable)?,
+            8usize => {
+                cs.new_wide_compose_decompose_gate(self.variable, p0.variable, p1.variable, p2.variable, p3.variable)?
+            },
+            _ => unimplemented!()
+        }
 
         Ok([p0, p1, p2, p3])
     }
@@ -886,7 +892,14 @@ impl<E: Engine> AllocatedNum<E> {
         where CS: ConstraintSystem<E>
     {
         let p = AllocatedNum::alloc_random(cs)?;
-        cs.new_compose_gate(p.variable, p0.variable, p1.variable, p2.variable, p3.variable)?;
+
+        match cs.get_state_width() {
+            4usize => cs.new_compose_gate(p.variable, p0.variable, p1.variable, p2.variable, p3.variable)?,
+            8usize => {
+                cs.new_wide_compose_decompose_gate(p.variable, p0.variable, p1.variable, p2.variable, p3.variable)?
+            },
+            _ => unimplemented!()
+        }
         
         Ok(p)
     }
@@ -970,6 +983,165 @@ impl<E: Engine> AllocatedNum<E> {
         )?;
 
         Ok(out)
+    }
+
+    pub fn hirose_init<CS>(
+        cs: &mut CS,
+        R0: &AllocatedNum<E>, R1: &AllocatedNum<E>, R2: &AllocatedNum<E>, R3: &AllocatedNum<E>,
+    ) -> Result<[Self; 4], SynthesisError>
+        where CS: ConstraintSystem<E>
+    {
+        let L0 = AllocatedNum::alloc_random(cs)?;
+        let L1 = AllocatedNum::alloc_random(cs)?;
+        let L2 = AllocatedNum::alloc_random(cs)?;
+        let L3 = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_hirose_init_gate(L0.variable, L1.variable, L2.variable, L3.variable,
+            R0.variable, R1.variable, R2.variable, R3.variable)?;
+
+        Ok([L0, L1, L2, L3])
+
+    }
+
+    // returns triple P_new, Q_new, K_new
+    pub fn wide_round_key_add_update<CS>(
+        cs: &mut CS, 
+        P_old: &AllocatedNum<E>, Q_old: &AllocatedNum<E>, K_old: &AllocatedNum<E>, K_modifier: &AllocatedNum<E>,
+    ) -> Result<[Self; 3], SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let P_new = AllocatedNum::alloc_random(cs)?;
+        let Q_new = AllocatedNum::alloc_random(cs)?;
+        let K_new = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_wide_round_key_add_update(P_old.variable, Q_old.variable, K_old.variable, 
+            P_new.variable, Q_new.variable, K_new.variable, K_modifier.variable)?;
+
+        Ok([P_new, Q_new, K_new])
+    }
+
+    pub fn paired_inv_select<CS>(
+        cs: &mut CS, 
+        x: &AllocatedNum<E>, 
+        y: &AllocatedNum<E>,  
+    ) -> Result<(Self, Self), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let x_inv = AllocatedNum::alloc_random(cs)?;
+        let flag_x = AllocatedNum::alloc_random(cs)?;
+        let out_x = AllocatedNum::alloc_random(cs)?;
+
+        let y_inv = AllocatedNum::alloc_random(cs)?;
+        let flag_y = AllocatedNum::alloc_random(cs)?;
+        let out_y = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_paired_inv_select_gate(
+            x.variable, x_inv.variable, flag_x.variable, out_x.variable,
+            y.variable, y_inv.variable, flag_y.variable, out_y.variable
+        )?;
+
+        Ok((out_x, out_y))
+    }
+
+    pub fn paired_sub_bytes<CS>(
+        cs: &mut CS, 
+        x: &AllocatedNum<E>, 
+        y: &AllocatedNum<E>,  
+    ) -> Result<(Self, Self), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let l1 = AllocatedNum::alloc_random(cs)?;
+        let l2 = AllocatedNum::alloc_random(cs)?;
+        let out_x = AllocatedNum::alloc_random(cs)?;
+
+        let n1 = AllocatedNum::alloc_random(cs)?;
+        let n2 = AllocatedNum::alloc_random(cs)?;
+        let out_y = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_paired_sub_bytes_gate(
+            x.variable, l1.variable, l2.variable, out_x.variable,
+            y.variable, n1.variable, n2.variable, out_y.variable
+        )?;
+
+        Ok((out_x, out_y))
+    }
+
+    pub fn paired_decompose<CS>(
+        cs: &mut CS,
+        p: &AllocatedNum<E>,
+        q: &AllocatedNum<E>,
+    ) -> Result<([Self; 4], [Self; 4]), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let p0 = AllocatedNum::alloc_random(cs)?;
+        let p1 = AllocatedNum::alloc_random(cs)?;
+        let p2 = AllocatedNum::alloc_random(cs)?;
+        let p3 = AllocatedNum::alloc_random(cs)?;
+
+        let q0 = AllocatedNum::alloc_random(cs)?;
+        let q1 = AllocatedNum::alloc_random(cs)?;
+        let q2 = AllocatedNum::alloc_random(cs)?;
+        let q3 = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_paired_decompose_gate(
+            p.variable, p0.variable, p1.variable, p2.variable, p3.variable,
+            q.variable, q0.variable, q1.variable, q2.variable, q3.variable
+        )?;
+
+        Ok(([p0, p1, p2, p3], [q0, q1, q2, q3]))
+    }
+
+    pub fn paired_compose<CS>(
+        cs: &mut CS,
+        p0: &AllocatedNum<E>, p1: &AllocatedNum<E>, p2: &AllocatedNum<E>, p3: &AllocatedNum<E>,
+        q0: &AllocatedNum<E>, q1: &AllocatedNum<E>, q2: &AllocatedNum<E>, q3: &AllocatedNum<E>,
+    ) -> Result<(Self, Self), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let p = AllocatedNum::alloc_random(cs)?;
+        let q = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_paired_decompose_gate(
+            p.variable, p0.variable, p1.variable, p2.variable, p3.variable,
+            q.variable, q0.variable, q1.variable, q2.variable, q3.variable
+        )?;
+
+        Ok((p, q))
+    }
+
+    pub fn paired_mix_columns<CS>(
+        &mut self,
+        cs: &mut CS,
+        p0: &AllocatedNum<E>, p1: &AllocatedNum<E>, p2: &AllocatedNum<E>, p3: &AllocatedNum<E>,
+        q0: &AllocatedNum<E>, q1: &AllocatedNum<E>, q2: &AllocatedNum<E>, q3: &AllocatedNum<E>,
+    ) -> Result<(Self, Self), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let p = AllocatedNum::alloc_random(cs)?;
+        let q = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_paired_mix_columns_gate(
+            p.variable, p0.variable, p1.variable, p2.variable, p3.variable,
+            q.variable, q0.variable, q1.variable, q2.variable, q3.variable
+        )?;
+
+        Ok((p, q))
+    }
+
+    pub fn wide_final_hash_update<CS>(
+        cs: &mut CS,
+        l: &AllocatedNum<E>, p_old: &AllocatedNum<E>, r: &AllocatedNum<E>, q_old: &AllocatedNum<E>, k: &AllocatedNum<E>,
+    ) -> Result<(Self, Self), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let p_new = AllocatedNum::alloc_random(cs)?;
+        let q_new = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_wide_final_hash_update_gate(
+            l.variable, p_old.variable, p_new.variable, r.variable, q_old.variable, q_new.variable, k.variable
+        )?;
+
+        Ok((p_new, q_new))
     }
    
 }

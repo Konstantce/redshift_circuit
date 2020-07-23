@@ -94,6 +94,8 @@ pub trait BinaryConstraintSystem<E: Engine> {
         Namespace(self.get_root(), std::marker::PhantomData)
     }
 
+    fn get_state_width(&self) -> usize;
+
     fn new_decompose_gate(
         &mut self, P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
     ) -> Result<(), SynthesisError>;
@@ -202,6 +204,10 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
 
     fn get_value(&self, variable: Variable) -> Result<E::Fr, SynthesisError> { 
         self.0.get_value(variable)
+    }
+
+    fn get_state_width(&self) -> usize {
+        self.0.get_state_width()
     }
   
     fn get_dummy_variable(&self) -> Variable {
@@ -320,7 +326,7 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
         R0: Variable, R1: Variable, R2: Variable, R3: Variable,
     ) -> Result<(), SynthesisError> 
     {
-        self.0.new_hirose_init_gate(L0)
+        self.0.new_hirose_init_gate(L0, L1, L2, L3, R0, R1, R2, R3)
     }
 
     fn new_wide_round_key_add_update(
@@ -328,49 +334,73 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
         P_old: Variable, Q_old: Variable, K_old: Variable, 
         P_new: Variable, Q_new: Variable, K_new: Variable, 
         K_modifier: Variable
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError> 
+    {
+        self.0.new_wide_round_key_add_update(P_old, Q_old, K_old, P_new, Q_new, K_new, K_modifier)
+    }
 
     fn new_wide_compose_decompose_gate(
         &mut self,
         P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_wide_compose_decompose_gate(P, P0, P1, P2, P3)
+    }
 
     fn new_paired_inv_select_gate(
         &mut self,
         x: Variable, x_inv: Variable, flag_x: Variable, out_x: Variable,
         y: Variable, y_inv: Variable, flag_y: Variable, out_y: Variable,
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_paired_inv_select_gate(x, x_inv, flag_x, out_x, y, y_inv, flag_y, out_y)
+    }
 
     fn new_paired_sub_bytes_gate(
         &mut self,
         x: Variable, l1: Variable, l2: Variable, out_x: Variable,
         y: Variable, n1: Variable, n2: Variable, out_y: Variable,
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_paired_sub_bytes_gate(x, l1, l2, out_x, y, n1, n2, out_y)
+    }
 
     fn new_paired_decompose_gate(
         &mut self,
         P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
         Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_paired_decompose_gate(P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3)
+    }
 
     fn new_paired_compose_gate(
         &mut self,
         P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
         Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_paired_compose_gate(P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3)
+    }
 
     fn new_paired_mix_columns_gate(
         &mut self,
         OUT_P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
         OUT_Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_paired_mix_columns_gate(OUT_P, P0, P1, P2, P3, OUT_Q, Q0, Q1, Q2, Q3)
+    }
 
     fn new_wide_final_hash_update_gate(
         &mut self,
         L: Variable, P_old: Variable, P_new: Variable,
         R: Variable, Q_old: Variable, Q_new: Variable,
         K: Variable
-    ) -> Result<(), SynthesisError>;
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_wide_final_hash_update_gate(L, P_old, P_new, R, Q_old, Q_new, K)
+    }
 }
 
 
@@ -410,6 +440,10 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
   
     fn get_dummy_variable(&self) -> Variable {
         (**self).get_dummy_variable()
+    }
+
+    fn get_state_width(&self) -> usize {
+        (**self).get_state_width()
     }
 
     fn new_enforce_constant_gate(&mut self, variable: Variable, constant: E::Fr) -> Result<(), SynthesisError> {
@@ -512,5 +546,87 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
     ) -> Result<(), SynthesisError>
     {
         (**self).new_add_update_round_key_gate(P_old, P_new, K_old, K_new, temp)
+    }
+
+    fn new_hirose_init_gate(
+        &mut self,
+        L0: Variable, L1: Variable, L2: Variable, L3: Variable, 
+        R0: Variable, R1: Variable, R2: Variable, R3: Variable,
+    ) -> Result<(), SynthesisError> 
+    {
+        (**self).new_hirose_init_gate(L0, L1, L2, L3, R0, R1, R2, R3)
+    }
+
+    fn new_wide_round_key_add_update(
+        &mut self,
+        P_old: Variable, Q_old: Variable, K_old: Variable, 
+        P_new: Variable, Q_new: Variable, K_new: Variable, 
+        K_modifier: Variable
+    ) -> Result<(), SynthesisError> 
+    {
+        (**self).new_wide_round_key_add_update(P_old, Q_old, K_old, P_new, Q_new, K_new, K_modifier)
+    }
+
+    fn new_wide_compose_decompose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_wide_compose_decompose_gate(P, P0, P1, P2, P3)
+    }
+
+    fn new_paired_inv_select_gate(
+        &mut self,
+        x: Variable, x_inv: Variable, flag_x: Variable, out_x: Variable,
+        y: Variable, y_inv: Variable, flag_y: Variable, out_y: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_paired_inv_select_gate(x, x_inv, flag_x, out_x, y, y_inv, flag_y, out_y)
+    }
+
+    fn new_paired_sub_bytes_gate(
+        &mut self,
+        x: Variable, l1: Variable, l2: Variable, out_x: Variable,
+        y: Variable, n1: Variable, n2: Variable, out_y: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_paired_sub_bytes_gate(x, l1, l2, out_x, y, n1, n2, out_y)
+    }
+
+    fn new_paired_decompose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_paired_decompose_gate(P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3)
+    }
+
+    fn new_paired_compose_gate(
+        &mut self,
+        P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_paired_compose_gate(P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3)
+    }
+
+    fn new_paired_mix_columns_gate(
+        &mut self,
+        OUT_P: Variable, P0: Variable, P1: Variable, P2: Variable, P3: Variable,
+        OUT_Q: Variable, Q0: Variable, Q1: Variable, Q2: Variable, Q3: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_paired_mix_columns_gate(OUT_P, P0, P1, P2, P3, OUT_Q, Q0, Q1, Q2, Q3)
+    }
+
+    fn new_wide_final_hash_update_gate(
+        &mut self,
+        L: Variable, P_old: Variable, P_new: Variable,
+        R: Variable, Q_old: Variable, Q_new: Variable,
+        K: Variable
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_wide_final_hash_update_gate(L, P_old, P_new, R, Q_old, Q_new, K)
     }
 }
