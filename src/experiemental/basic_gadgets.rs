@@ -1101,7 +1101,7 @@ impl<E: Engine> AllocatedNum<E> {
         let p = AllocatedNum::alloc_random(cs)?;
         let q = AllocatedNum::alloc_random(cs)?;
 
-        cs.new_paired_decompose_gate(
+        cs.new_paired_compose_gate(
             p.variable, p0.variable, p1.variable, p2.variable, p3.variable,
             q.variable, q0.variable, q1.variable, q2.variable, q3.variable
         )?;
@@ -1110,7 +1110,6 @@ impl<E: Engine> AllocatedNum<E> {
     }
 
     pub fn paired_mix_columns<CS>(
-        &mut self,
         cs: &mut CS,
         p0: &AllocatedNum<E>, p1: &AllocatedNum<E>, p2: &AllocatedNum<E>, p3: &AllocatedNum<E>,
         q0: &AllocatedNum<E>, q1: &AllocatedNum<E>, q2: &AllocatedNum<E>, q3: &AllocatedNum<E>,
@@ -1139,6 +1138,24 @@ impl<E: Engine> AllocatedNum<E> {
 
         cs.new_wide_final_hash_update_gate(
             l.variable, p_old.variable, p_new.variable, r.variable, q_old.variable, q_new.variable, k.variable
+        )?;
+
+        Ok((p_new, q_new))
+    }
+
+    pub fn wide_round_key_add<CS>(
+        cs: &mut CS,
+        p_old: &AllocatedNum<E>, 
+        q_old: &AllocatedNum<E>, 
+        key: &AllocatedNum<E>, 
+    ) -> Result<(Self, Self), SynthesisError>
+    where CS: ConstraintSystem<E>
+    {
+        let p_new = AllocatedNum::alloc_random(cs)?;
+        let q_new = AllocatedNum::alloc_random(cs)?;
+
+        cs.new_wide_round_key_add_gate(
+            p_old.variable, q_old.variable, key.variable, p_new.variable, q_new.variable
         )?;
 
         Ok((p_new, q_new))

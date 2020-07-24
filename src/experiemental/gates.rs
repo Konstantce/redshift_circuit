@@ -169,6 +169,7 @@ pub enum GateType {
     PairedComposeGate,
     PairedMixColumnsGate,
     WideFinalHashUpdateGate,
+    WideRoundKeyAddGate,
 }
 
 
@@ -202,6 +203,7 @@ impl fmt::Display for GateType {
             GateType::PairedComposeGate => "Paired Compose Gate",
             GateType::PairedMixColumnsGate => "Paired MixColumns Gate",
             GateType::WideFinalHashUpdateGate => "Paired WideFinalHashUpdate Gate",
+            GateType::WideRoundKeyAddGate => "Key Addition Gate",
         };
         
         write!(f, "{}", description)
@@ -353,6 +355,13 @@ pub enum Gate<Fr: BinaryField> {
     // P_new = L + P_old + K
     // Q_new = R + Q_old + K
     WideFinalHashUpdateGate([Variable; 7]),
+
+    // for HiroseSheme we assume that the length of key is twice as large as the length of AES-block
+    // hence, there is no need to update the key in the initail round: it is enough to add the key as os
+    // the state is [P_old, Q_old, K, P_new, Q_new]
+    // P_new = P_old + K
+    // Q_new = Q_old + K
+    WideRoundKeyAddGate([Variable; 5]),
 }
 
 
@@ -430,6 +439,7 @@ impl<Fr: BinaryField> Gate<Fr> {
             Gate::PairedComposeGate(_) => GateType::PairedComposeGate,
             Gate::PairedMixColumnsGate(_) => GateType::PairedMixColumnsGate,
             Gate::WideFinalHashUpdateGate(_) => GateType::WideFinalHashUpdateGate,
+            Gate::WideRoundKeyAddGate(_) => GateType::WideRoundKeyAddGate,
 
             _ => unreachable!(),
         };
@@ -519,19 +529,20 @@ impl<Fr: BinaryField> Gate<Fr> {
         Self::PairedMixColumnsGate([OUT_P, P0, P1, P2, P3, OUT_Q, Q0, Q1, Q2, Q3])
     }
 
-    // in the final key addition there is no need to update the key:
-    // [L, R] is the "state" of Hirose constuction (Left and Right) before goint into AES routine
-    // [P_old, P_new, K] are the values of P, Q, right after executing AES and before final key addition
-    // [P_new, Q_new] is final hash digest (new value of L, R)
-    // the state is : [L, P_old, P_new, R, Q_old, Q_new, K]
-    //the transition function are actually the following: 
-    // P_new = L + P_old + K
-    // Q_new = R + Q_old + K
     pub(crate) fn new_wide_final_hash_update_gate(
         L: Variable, P_old: Variable, P_new: Variable,
         R: Variable, Q_old: Variable, Q_new: Variable,
         K: Variable
     ) -> Self {
         Self::WideFinalHashUpdateGate([L, P_old, P_new, R, Q_old, Q_new, K])
+    }
+
+    // the state is [P_old, Q_old, K, P_new, Q_new]
+    // P_new = P_old + K
+    // Q_new = Q_old + K
+    pub(crate) fn new_wide_round_key_add_gate(
+        P_old: Variable, Q_old: Variable, Key: Variable, P_new: Variable, Q_new: Variable,
+    ) -> Self {
+        Self::WideRoundKeyAddGate([P_old, Q_old, Key, P_new, Q_new])
     }
 }

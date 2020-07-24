@@ -411,7 +411,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         x: Variable, l1: Variable, l2: Variable, out_x: Variable,
         y: Variable, n1: Variable, n2: Variable, out_y: Variable,
     ) -> Result<(), SynthesisError>
-    {
+    {   
         let gate = Gate::new_paired_sub_bytes_gate(x, l1, l2, out_x, y, n1, n2, out_y);
         self.constraints_per_type[gate.gate_type()] += 1;
         self.aux_gates.push(gate);
@@ -435,7 +435,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.n += 1;
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         
-        self.update_state(&[P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3]);
+        self.update_state(&[P, P1, P2, P3, Q, Q1, Q2, Q3]);
         self.next_row_check = vec![P0, Q0];
 
         Ok(())
@@ -454,7 +454,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         
         assert!(self.is_linked_to_previos_row(&[P3, Q3]));
-        self.update_state(&[P, P0, P1, P2, P3, Q, Q0, Q1, Q2, Q3]);
+        self.update_state(&[P, P0, P1, P2, Q, Q0, Q1, Q2]);
 
         Ok(())
     }
@@ -472,7 +472,7 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         
         assert!(self.is_linked_to_previos_row(&[P3, Q3]));
-        self.update_state(&[OUT_P, P0, P1, P2, P3, OUT_Q, Q0, Q1, Q2, Q3]);
+        self.update_state(&[OUT_P, P0, P1, P2, OUT_Q, Q0, Q1, Q2]);
 
         Ok(())
     }
@@ -491,6 +491,23 @@ impl<E: Engine> BinaryConstraintSystem<E> for TestAssembly<E> {
         self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
         
         self.update_state(&[L, P_old, P_new, R, Q_old, Q_new, K]);
+
+        Ok(())
+    }
+
+    fn new_wide_round_key_add_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, Key: Variable, 
+        P_new: Variable, Q_new: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        let gate = Gate::new_wide_round_key_add_gate(P_old, Q_old, Key, P_new, Q_new);
+        self.constraints_per_type[gate.gate_type()] += 1;
+        self.aux_gates.push(gate);
+        self.n += 1;
+        self.constraints_per_namespace[self.cur_namespace_idx].1 += 1;
+        
+        self.update_state(&[P_old, Q_old, Key, P_new, Q_new]);
 
         Ok(())
     }
@@ -743,7 +760,8 @@ impl<E: Engine> TestAssembly<E> {
 
                 Gate::HiroseInitGate(_) | Gate::WideRoundKeyAddUpdateGate(_) | Gate::WideComposeDecompose(_) |
                 Gate::PairedInvSelectorGate(_) | Gate::PairedSubBytesGate(_) | Gate::PairedDecomposeGate(_) | 
-                Gate::PairedComposeGate(_) | Gate::PairedMixColumnsGate(_) | Gate::WideFinalHashUpdateGate(_) => {
+                Gate::PairedComposeGate(_) | Gate::PairedMixColumnsGate(_) | Gate::WideFinalHashUpdateGate(_) 
+                | Gate::WideRoundKeyAddGate(_) => {
                     
                     // TODO: add checks
 

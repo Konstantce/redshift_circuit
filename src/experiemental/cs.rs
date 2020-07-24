@@ -173,6 +173,12 @@ pub trait BinaryConstraintSystem<E: Engine> {
         R: Variable, Q_old: Variable, Q_new: Variable,
         K: Variable
     ) -> Result<(), SynthesisError>;
+
+    fn new_wide_round_key_add_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, Key: Variable, 
+        P_new: Variable, Q_new: Variable,
+    ) -> Result<(), SynthesisError>;
 }
 
 
@@ -401,6 +407,15 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
     {
         self.0.new_wide_final_hash_update_gate(L, P_old, P_new, R, Q_old, Q_new, K)
     }
+
+    fn new_wide_round_key_add_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, Key: Variable, 
+        P_new: Variable, Q_new: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        self.0.new_wide_round_key_add_gate(P_old, Q_old, Key, P_new, Q_new)
+    }
 }
 
 
@@ -628,5 +643,14 @@ impl<'cs, E: Engine, CS: BinaryConstraintSystem<E>> BinaryConstraintSystem<E> fo
     ) -> Result<(), SynthesisError>
     {
         (**self).new_wide_final_hash_update_gate(L, P_old, P_new, R, Q_old, Q_new, K)
+    }
+
+    fn new_wide_round_key_add_gate(
+        &mut self,
+        P_old: Variable, Q_old: Variable, Key: Variable, 
+        P_new: Variable, Q_new: Variable,
+    ) -> Result<(), SynthesisError>
+    {
+        (**self).new_wide_round_key_add_gate(P_old, Q_old, Key, P_new, Q_new)
     }
 }
